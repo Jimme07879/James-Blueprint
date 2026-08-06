@@ -106,8 +106,9 @@ function BlueprintApp({session}:{session:Session}) {
       <div className="topbar">
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
       </div>
-      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads}/>}
+      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
+      {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
       {tab==='Me'&&<MeCentre entries={entries} edit={editDaily}/>}
       {tab==='Relationships'&&<Relationships session={session} entries={entries} settings={settings} reload={loadAll}/>}
       {tab==='Health'&&<Health entries={entries}/>}
