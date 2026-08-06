@@ -1,4 +1,4 @@
-# The James Blueprint — Private Cloud Version
+# The James Blueprint — Private Cloud Version 1.1
 
 This package is a deploy-ready private web application for one user.
 
@@ -78,3 +78,14 @@ Open the address shown in the terminal, usually `http://localhost:3000`.
 
 ## Current scope
 This is the private personal cloud release. It does not yet include Sage CSV import, Outlook integration, reminders or automated backups outside Supabase. Those can be added later without changing the core structure.
+
+
+## Version 1.1 additions
+- Daily standard on the dashboard
+- Today's mission and relationship action shown immediately
+- 30-day momentum cards for exercise, smoke-free days, priorities and goals
+- Stronger CEO focus on the home dashboard
+- No database migration required from Version 1.0
+
+## Updating your live Vercel app
+Replace the files in your GitHub repository with this package and commit them. Vercel should automatically deploy the update. Keep your existing Supabase database and environment variables.

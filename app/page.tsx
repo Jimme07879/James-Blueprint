@@ -119,22 +119,43 @@ function BlueprintApp({session}:{session:Session}) {
 
 function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads:any[]}) {
   const recent=entries.slice(-30);
+  const latest=entries.at(-1);
   const avg=(key:keyof DailyEntry)=>recent.length?recent.reduce((a,e)=>a+(Number(e[key])||0),0)/recent.length:0;
   const chart=recent.map(e=>({date:e.entry_date.slice(5),overall:e.overall_score||0,sleep:e.sleep_hours||0,energy:e.energy||0}));
+  const completedPriorities=recent.reduce((n,e)=>n+[e.priority_1,e.priority_2,e.priority_3].filter(Boolean).length,0);
+  const smokeFree=recent.filter(e=>e.habits?.['No smoking']).length;
+  const exerciseDays=recent.filter(e=>e.habits?.Exercise).length;
+  const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
+  const quotes=[
+    'Do the difficult thing before the easy thing.',
+    'Small actions, repeated daily, build the future.',
+    'Keep your word—to yourself and to others.',
+    'Build a business that serves your life.',
+    'Listen first. Respond second.'
+  ];
+  const quote=quotes[new Date().getDate()%quotes.length];
   return <>
+    <div className="card" style={{marginBottom:18}}>
+      <div className="kpiLabel">Today’s standard</div>
+      <div style={{fontSize:22,fontWeight:800,marginTop:6}}>{quote}</div>
+    </div>
     <div className="grid cols4">
       <Kpi label="Saved days" value={entries.length}/>
       <Kpi label="Average overall" value={`${avg('overall_score').toFixed(1)}/10`}/>
       <Kpi label="Average sleep" value={`${avg('sleep_hours').toFixed(1)} hrs`}/>
-      <Kpi label="Active goals" value={goals.filter(g=>g.status!=='Complete').length}/>
+      <Kpi label="Open sales opportunities" value={openLeads}/>
+    </div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>Today’s mission</h2><div className="listItem">{latest?.mission||'Complete today’s Daily Command Centre.'}</div><h3 style={{marginTop:16}}>Relationship action</h3><div className="listItem">{latest?.relationship_action||'Choose one small action that makes someone important feel valued.'}</div></div>
+      <div className="card"><h2>30-day momentum</h2><div className="grid cols2"><Kpi label="Exercise days" value={exerciseDays}/><Kpi label="Smoke-free days" value={smokeFree}/><Kpi label="Priority entries" value={completedPriorities}/><Kpi label="Active goals" value={goals.filter(g=>g.status!=='Complete').length}/></div></div>
     </div>
     <div className="grid cols2" style={{marginTop:18}}>
       <ChartCard title="30-day overall score" data={chart} keys={['overall']}/>
       <ChartCard title="Sleep and energy" data={chart} keys={['sleep','energy']}/>
     </div>
     <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card"><h2>Latest mission</h2><div className="listItem">{entries.at(-1)?.mission||'No daily record saved yet.'}</div></div>
-      <div className="card"><h2>Sales pipeline</h2><div className="kpi">{leads.filter(l=>!['Won','Lost'].includes(l.stage)).length}</div><div className="muted">open opportunities</div></div>
+      <div className="card"><h2>Tomorrow’s mission</h2><div className="listItem">{latest?.tomorrow_mission||'Not set yet.'}</div></div>
+      <div className="card"><h2>CEO focus</h2><div className="list"><div className="listItem"><strong>Opportunity</strong><br/>{latest?.opportunity||'Not entered'}</div><div className="listItem"><strong>Decision being avoided</strong><br/>{latest?.avoiding||'None recorded'}</div></div></div>
     </div>
   </>
 }
