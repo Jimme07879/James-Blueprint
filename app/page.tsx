@@ -116,7 +116,7 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='CEO'&&<CEOCentre entries={entries} business={business} leads={leads} setTab={setTab}/>}
       {tab==='Analytics'&&<Analytics entries={entries}/>}
       {tab==='Weekly'&&<Weekly session={session} records={weekly} entries={entries} reload={loadAll}/>}
-      {tab==='Business Hub'&&<BusinessIntegration business={business} leads={leads} setTab={setTab}/>}
+      {tab==='Business Hub'&&<Business session={session} value={business} reload={loadAll}/>}
       {tab==='Settings'&&<Vision session={session} settings={settings} reload={loadAll}/>}
     </main>
   </div>
