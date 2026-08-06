@@ -64,3 +64,20 @@ textarea{min-height:82px;resize:vertical}
 .card:hover{box-shadow:0 8px 26px rgba(20,25,35,.07)}
 .loginCard{border-top:5px solid #1e2227}
 @media(max-width:900px){.nav button{padding:14px}}
+
+.intelligenceHero{background:linear-gradient(135deg,#ffffff 0%,#eef1f5 100%);border-color:#d8dde4}
+.steviePreview{background:linear-gradient(145deg,#171a1f,#292e35);color:#fff;border:0}
+.steviePreview .muted{color:#c5cbd3}
+.coachCallout{padding:14px 16px;border-radius:12px;background:#eef1f5;border:1px solid #dfe3e8;line-height:1.5}
+.steviePreview .coachCallout{background:rgba(255,255,255,.10);border-color:rgba(255,255,255,.14)}
+.stevieMain{display:grid;grid-template-columns:64px 1fr;gap:18px;align-items:start;background:linear-gradient(135deg,#fff,#f1f3f6)}
+.stevieMark{width:56px;height:56px;border-radius:18px;background:#171a1f;color:#fff;display:grid;place-items:center;font-size:26px;font-weight:900}
+.briefHeadline{font-size:30px;margin:5px 0 8px}
+.briefSummary{font-size:16px;color:var(--muted);line-height:1.6}
+.insightCard.positive{border-top:4px solid #3f7d59}
+.insightCard.neutral{border-top:4px solid #68727e}
+.insightCard.warning{border-top:4px solid #b27a2d}
+@media(max-width:900px){
+ .stevieMain{grid-template-columns:1fr}
+ .briefHeadline{font-size:24px}
+}

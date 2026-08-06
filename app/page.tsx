@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 
 type DailyEntry = {
   id?: string; entry_date: string; sleep_hours?: number|null; sleep_quality?: number|null;
@@ -18,7 +18,7 @@ type DailyEntry = {
   gratitude?: string|null; tomorrow_mission?: string|null;
 };
 
-const tabs = ['Home','Daily','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Daily','Stevie','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -121,7 +121,138 @@ function BlueprintApp({session}:{session:Session}) {
   </div>
 }
 
-function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads:any[]}) {
+
+type StevieBrief = {
+  headline:string; summary:string; action:string; observations:string[]; wins:string[]; cautions:string[];
+};
+
+function numericAverage(values:(number|null|undefined)[]){
+  const valid=values.map(Number).filter(v=>Number.isFinite(v)&&v>0);
+  return valid.length?valid.reduce((a,b)=>a+b,0)/valid.length:0;
+}
+
+function buildStevieBrief(entries:DailyEntry[],goals:any[],leads:any[]):StevieBrief {
+  const last7=entries.slice(-7);
+  const previous7=entries.slice(-14,-7);
+  const latest=entries.at(-1);
+  const sleep=numericAverage(last7.map(e=>e.sleep_hours));
+  const energy=numericAverage(last7.map(e=>e.energy));
+  const mood=numericAverage(last7.map(e=>e.mood));
+  const stress=numericAverage(last7.map(e=>e.stress));
+  const previousEnergy=numericAverage(previous7.map(e=>e.energy));
+  const exercise=last7.filter(e=>e.habits?.Exercise).length;
+  const recovery=last7.filter(e=>e.habits?.['Recovery time']).length;
+  const relationshipActions=last7.filter(e=>e.relationship_action).length;
+  const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
+  const overdueGoals=goals.filter(g=>g.status!=='Complete'&&g.deadline&&g.deadline<today).length;
+  const observations:string[]=[];
+  const wins:string[]=[];
+  const cautions:string[]=[];
+
+  if(sleep&&sleep<6) cautions.push(`Your seven-day sleep average is ${sleep.toFixed(1)} hours.`);
+  else if(sleep>=7) wins.push(`Sleep is averaging ${sleep.toFixed(1)} hours.`);
+  if(previousEnergy&&energy<previousEnergy-.7) cautions.push(`Energy has dropped from ${previousEnergy.toFixed(1)} to ${energy.toFixed(1)}.`);
+  else if(energy>=7) wins.push(`Energy is holding strongly at ${energy.toFixed(1)}/10.`);
+  if(stress>=7) cautions.push(`Stress is averaging ${stress.toFixed(1)}/10.`);
+  if(exercise>=3) wins.push(`You exercised on ${exercise} of the last seven recorded days.`);
+  else observations.push(`Exercise was recorded on ${exercise} of the last seven days.`);
+  if(recovery<2) cautions.push('Recovery time has been limited this week.');
+  if(relationshipActions>=5) wins.push('You have been consistently planning relationship actions.');
+  else observations.push(`Relationship actions were planned on ${relationshipActions} recent days.`);
+  if(openLeads) observations.push(`${openLeads} sales opportunities remain open.`);
+  if(overdueGoals) cautions.push(`${overdueGoals} goal${overdueGoals===1?' is':'s are'} overdue.`);
+  if(latest?.avoiding) cautions.push(`You recorded an avoided decision: ${latest.avoiding}`);
+
+  let headline='Keep the day balanced.';
+  let summary='Your data is still building. Consistency will make the briefing more useful.';
+  let action=latest?.mission||'Complete today’s check-in and choose one meaningful action in work, health and relationships.';
+
+  if(cautions.some(x=>x.includes('sleep'))){
+    headline='Protect your energy before pushing harder.';
+    summary='Recent sleep is likely to affect focus, patience and decision-making.';
+    action='Keep today’s mission focused and protect a realistic recovery window.';
+  } else if(latest?.avoiding){
+    headline='The avoided decision deserves your attention.';
+    summary='Unresolved decisions create background pressure and often keep returning.';
+    action='Define the smallest next step and complete it before lower-value work.';
+  } else if(openLeads>=3){
+    headline='There is commercial opportunity waiting.';
+    summary='Your pipeline contains several open opportunities, but the rest of life still needs protecting.';
+    action='Complete one focused sales block, then deliberately switch attention to health or relationships.';
+  } else if(energy>=7&&mood>=7){
+    headline='You have good momentum today.';
+    summary='Energy and mood are both supporting purposeful action.';
+    action='Use the strongest part of the day for the task that requires courage or concentration.';
+  }
+
+  return {headline,summary,action,observations,wins,cautions};
+}
+
+function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],business:any,setTab:(t:string)=>void}) {
+  const brief=buildStevieBrief(entries,goals,leads);
+  const latest=entries.at(-1);
+  const last7=entries.slice(-7);
+  const avg=(key:keyof DailyEntry)=>numericAverage(last7.map(e=>e[key] as number));
+  return <>
+    <div className="card stevieMain">
+      <div className="stevieMark">S</div>
+      <div>
+        <div className="kpiLabel">Stevie Daily Brief</div>
+        <h1 className="briefHeadline">{brief.headline}</h1>
+        <p className="briefSummary">{brief.summary}</p>
+        <div className="coachCallout"><strong>Best next action:</strong><br/>{brief.action}</div>
+        <div className="actions" style={{marginTop:14}}>
+          <button className="btn primary" onClick={()=>setTab('Daily')}>Update today’s record</button>
+          <button className="btn" onClick={()=>setTab('CEO')}>Open CEO focus</button>
+        </div>
+      </div>
+    </div>
+
+    <div className="grid cols4" style={{marginTop:18}}>
+      <Kpi label="Sleep · 7 days" value={`${avg('sleep_hours').toFixed(1)} hrs`}/>
+      <Kpi label="Energy · 7 days" value={`${avg('energy').toFixed(1)}/10`}/>
+      <Kpi label="Mood · 7 days" value={`${avg('mood').toFixed(1)}/10`}/>
+      <Kpi label="Stress · 7 days" value={`${avg('stress').toFixed(1)}/10`}/>
+    </div>
+
+    <div className="grid cols3" style={{marginTop:18}}>
+      <InsightCard title="What is going well" items={brief.wins} empty="Keep recording wins and habits to build this section." tone="positive"/>
+      <InsightCard title="What to notice" items={brief.observations} empty="No neutral observations yet." tone="neutral"/>
+      <InsightCard title="What needs attention" items={brief.cautions} empty="No immediate warnings from your recent data." tone="warning"/>
+    </div>
+
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card">
+        <h2>Today’s commitments</h2>
+        <div className="list">
+          <div className="listItem"><strong>Mission</strong><br/>{latest?.mission||'Not set'}</div>
+          <div className="listItem"><strong>CEO opportunity</strong><br/>{latest?.opportunity||'Not set'}</div>
+          <div className="listItem"><strong>Relationship promise</strong><br/>{latest?.relationship_promise||'Not set'}</div>
+        </div>
+      </div>
+      <div className="card">
+        <h2>Business pulse</h2>
+        <div className="grid cols2">
+          <Kpi label="Weekly sales" value={business?.sales_actual?`£${Number(business.sales_actual).toLocaleString('en-GB')}`:'Not entered'}/>
+          <Kpi label="Gross profit" value={business?.gross_profit?`£${Number(business.gross_profit).toLocaleString('en-GB')}`:'Not entered'}/>
+          <Kpi label="Open leads" value={leads.filter(l=>!['Won','Lost'].includes(l.stage)).length}/>
+          <Kpi label="Active goals" value={goals.filter(g=>g.status!=='Complete').length}/>
+        </div>
+      </div>
+    </div>
+
+    <div className="card" style={{marginTop:18}}>
+      <h2>How Stevie works</h2>
+      <p className="muted">This briefing currently uses transparent rules based on your own saved sleep, energy, mood, stress, habits, relationship actions, goals and CEO entries. It does not send personal data to an external AI service.</p>
+    </div>
+  </>
+}
+
+function InsightCard({title,items,empty,tone}:{title:string,items:string[],empty:string,tone:'positive'|'neutral'|'warning'}){
+  return <div className={`card insightCard ${tone}`}><h2>{title}</h2><div className="list">{items.length?items.map((item,i)=><div className="listItem" key={i}>{item}</div>):<div className="muted">{empty}</div>}</div></div>
+}
+
+function Dashboard({entries,goals,leads,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],setTab:(t:string)=>void}) {
   const recent=entries.slice(-30);
   const last7=entries.slice(-7);
   const latest=entries.at(-1);
@@ -132,6 +263,8 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
   const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
   const activeGoals=goals.filter(g=>g.status!=='Complete').length;
   const completeGoals=goals.filter(g=>g.status==='Complete').length;
+  const greetingHour=new Date().getHours();
+  const greeting=greetingHour<12?'Good morning':greetingHour<18?'Good afternoon':'Good evening';
   const habitStreak=(habit:string)=>{
     let streak=0;
     for(let i=entries.length-1;i>=0;i--){
@@ -150,19 +283,16 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
     }
     return streak;
   };
-  const quotes=[
-    'Do the difficult thing before the easy thing.',
-    'Small actions, repeated daily, build the future.',
-    'Keep your word—to yourself and to others.',
-    'Build a business that serves your life.',
-    'Listen first. Respond second.'
-  ];
-  const quote=quotes[new Date().getDate()%quotes.length];
+  const brief=buildStevieBrief(entries,goals,leads);
   return <>
-    <div className="card heroCard" style={{marginBottom:18}}>
+    <div className="card heroCard intelligenceHero" style={{marginBottom:18}}>
       <div>
-        <div className="kpiLabel">Today’s standard</div>
-        <div className="heroText">{quote}</div>
+        <div className="kpiLabel">{greeting}, James</div>
+        <div className="heroText">{latest?.mission||'Set today’s mission and decide what matters most.'}</div>
+        <div className="actions" style={{marginTop:14}}>
+          <button className="btn primary" onClick={()=>setTab('Daily')}>Open Daily Command Centre</button>
+          <button className="btn" onClick={()=>setTab('Stevie')}>Read Stevie Brief</button>
+        </div>
       </div>
       <div className="streakBadge">{entryStreak()} day check-in streak</div>
     </div>
@@ -175,14 +305,24 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
     </div>
 
     <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card steviePreview">
+        <div className="kpiLabel">Stevie’s priority</div>
+        <h2>{brief.headline}</h2>
+        <p className="muted">{brief.summary}</p>
+        <div className="coachCallout">{brief.action}</div>
+        <button className="btn" style={{marginTop:12}} onClick={()=>setTab('Stevie')}>See full briefing</button>
+      </div>
       <div className="card">
-        <h2>Today’s focus</h2>
+        <h2>Today’s balance</h2>
         <div className="list">
-          <div className="listItem"><strong>Mission</strong><br/>{latest?.mission||'Complete today’s Daily Command Centre.'}</div>
-          <div className="listItem"><strong>Relationship action</strong><br/>{latest?.relationship_action||'Choose one small action that makes someone important feel valued.'}</div>
-          <div className="listItem"><strong>Tomorrow</strong><br/>{latest?.tomorrow_mission||'Not set yet.'}</div>
+          <div className="listItem"><strong>CEO focus</strong><br/>{latest?.opportunity||'Choose the most valuable opportunity today.'}</div>
+          <div className="listItem"><strong>Relationship</strong><br/>{latest?.relationship_action||'Plan one clear action that makes someone feel valued.'}</div>
+          <div className="listItem"><strong>Health</strong><br/>{latest?.sleep_hours?`${latest.sleep_hours} hours sleep · energy ${latest.energy||'-'}/10`:'Complete your morning health check.'}</div>
         </div>
       </div>
+    </div>
+
+    <div className="grid cols2" style={{marginTop:18}}>
       <div className="card">
         <h2>Momentum & streaks</h2>
         <div className="grid cols2">
@@ -192,30 +332,18 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
           <Kpi label="Smoke-free days / 30" value={smokeFree}/>
         </div>
       </div>
+      <div className="card">
+        <h2>Goal progress</h2>
+        <div className="goalProgressNumber">{completeGoals} of {goals.length} complete</div>
+        <div className="progress"><span style={{width:`${goals.length?(completeGoals/goals.length)*100:0}%`}}></span></div>
+        <h3 style={{marginTop:18}}>Decision being avoided</h3>
+        <div className="listItem">{latest?.avoiding||'Nothing recorded today.'}</div>
+      </div>
     </div>
 
     <div className="grid cols2" style={{marginTop:18}}>
       <ChartCard title="30-day overall score" data={chart} keys={['overall']}/>
       <ChartCard title="Sleep and energy" data={chart} keys={['sleep','energy']}/>
-    </div>
-
-    <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card">
-        <h2>Life pulse — seven days</h2>
-        <div className="list">
-          <div className="listItem"><strong>Average energy</strong><div className="kpi">{avg(last7,'energy').toFixed(1)}/10</div></div>
-          <div className="listItem"><strong>Average mood</strong><div className="kpi">{avg(last7,'mood').toFixed(1)}/10</div></div>
-          <div className="listItem"><strong>Average stress</strong><div className="kpi">{avg(last7,'stress').toFixed(1)}/10</div></div>
-        </div>
-      </div>
-      <div className="card">
-        <h2>Goal progress</h2>
-        <div className="goalProgressNumber">{completeGoals} of {goals.length} complete</div>
-        <div className="progress"><span style={{width:`${goals.length?(completeGoals/goals.length)*100:0}%`}}></span></div>
-        <h3 style={{marginTop:18}}>CEO focus</h3>
-        <div className="listItem"><strong>Opportunity</strong><br/>{latest?.opportunity||'Not entered'}</div>
-        <div className="listItem" style={{marginTop:10}}><strong>Decision being avoided</strong><br/>{latest?.avoiding||'None recorded'}</div>
-      </div>
     </div>
   </>
 }
@@ -305,25 +433,44 @@ function CEOCentre({entries,business,leads,setTab}:{entries:DailyEntry[],busines
 
 function Analytics({entries}:{entries:DailyEntry[]}) {
   const recent=entries.slice(-30);
-  const data=recent.map(e=>({date:e.entry_date.slice(5),mood:e.mood||0,energy:e.energy||0,stress:e.stress||0,sleep:e.sleep_hours||0,relationship:e.pillar_scores?.Relationships||0,life:e.pillar_scores?.Life||0}));
+  const last7=entries.slice(-7);
+  const avg=(values:any[])=>numericAverage(values.map(Number));
+  const data=recent.map(e=>({date:e.entry_date.slice(5),mood:e.mood||0,energy:e.energy||0,stress:e.stress||0,overall:e.overall_score||0}));
+  const balance=[
+    {area:'Health',score:avg(last7.map(e=>((Number(e.energy)||0)+(Number(e.sleep_quality)||0))/2))},
+    {area:'Relationships',score:avg(last7.map(e=>e.pillar_scores?.Relationships))},
+    {area:'CEO',score:avg(last7.map(e=>e.pillar_scores?.Business))},
+    {area:'Growth',score:avg(last7.map(e=>e.pillar_scores?.Growth))},
+    {area:'Life',score:avg(last7.map(e=>e.pillar_scores?.Life))},
+    {area:'Money',score:avg(last7.map(e=>e.pillar_scores?.Money))},
+    {area:'Me',score:avg(last7.map(e=>e.pillar_scores?.Me))}
+  ];
   return <>
-    <div className="grid cols2"><ChartCard title="Mood, energy and stress" data={data} keys={['mood','energy','stress']}/><ChartCard title="Sleep trend" data={data} keys={['sleep']}/></div>
-    <div className="grid cols2" style={{marginTop:18}}><ChartCard title="Relationship trend" data={data} keys={['relationship']}/><ChartCard title="Life and enjoyment" data={data} keys={['life']}/></div>
-    <div className="card" style={{marginTop:18}}><h2>How to use this</h2><p className="muted">Look for patterns rather than perfect scores. The goal is to notice what improves your energy, mood, relationships and performance.</p></div>
+    <div className="grid cols2">
+      <div className="card">
+        <h2>Life Balance · seven days</h2>
+        <div style={{width:'100%',height:340}}>
+          <ResponsiveContainer>
+            <RadarChart data={balance}>
+              <PolarGrid/>
+              <PolarAngleAxis dataKey="area"/>
+              <Radar dataKey="score" stroke="#22262b" fill="#22262b" fillOpacity={0.18}/>
+              <Tooltip/>
+            </RadarChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="muted small">The wheel becomes more accurate as you score your six pillars consistently.</p>
+      </div>
+      <div className="card">
+        <h2>Balance summary</h2>
+        <div className="list">{balance.map(b=><div className="listItem" key={b.area}><div className="goalHeader"><strong>{b.area}</strong><span className="badge">{b.score.toFixed(1)}/10</span></div><div className="progress"><span style={{width:`${Math.min(100,b.score*10)}%`}}></span></div></div>)}</div>
+      </div>
+    </div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <ChartCard title="Mood and energy" data={data} keys={['mood','energy']}/>
+      <ChartCard title="Stress and overall score" data={data} keys={['stress','overall']}/>
+    </div>
   </>
-}
-
-function BusinessIntegration({business,leads,setTab}:{business:any,leads:any[],setTab:(t:string)=>void}) {
-  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
-  return <>
-    <div className="card heroCard"><div><div className="kpiLabel">Business integration</div><div className="heroText">Your existing business dashboard will plug in here.</div></div><span className="streakBadge">Integration point ready</span></div>
-    <div className="grid cols4" style={{marginTop:18}}><Kpi label="Sales" value={money(business.sales_actual)}/><Kpi label="Gross profit" value={money(business.gross_profit)}/><Kpi label="Debtors" value={money(business.debtors)}/><Kpi label="Pipeline" value={leads.length}/></div>
-    <div className="grid cols2" style={{marginTop:18}}><div className="card"><h2>Current connection</h2><p className="muted">Blueprint OS currently stores your headline business snapshot and sales pipeline. Later, your full business dashboard can feed these figures automatically.</p><button className="btn primary" onClick={()=>setTab('CEO')}>Open CEO Dashboard</button></div><div className="card"><h2>Planned integration</h2><div className="list"><div className="listItem">Sales, GP, cash and debtors</div><div className="listItem">Open jobs and customer follow-ups</div><div className="listItem">One-click link to the full business dashboard</div></div></div></div>
-  </>
-}
-
-function History({entries,edit,remove}:{entries:DailyEntry[],edit:(e:DailyEntry)=>void,remove:(id?:string)=>void}) {
-  return <div className="card"><h2>Daily records</h2>{entries.length?<table className="table"><thead><tr><th>Date</th><th>Mission</th><th>Sleep</th><th>Energy</th><th>Overall</th><th></th></tr></thead><tbody>{[...entries].reverse().map(e=><tr key={e.id}><td>{e.entry_date}</td><td>{e.mission}</td><td>{e.sleep_hours??'-'}</td><td>{e.energy??'-'}</td><td><span className="badge">{e.overall_score??'-'}/10</span></td><td><button className="btn" onClick={()=>edit(e)}>Open</button> <button className="btn danger" onClick={()=>remove(e.id)}>Delete</button></td></tr>)}</tbody></table>:<div className="muted">No records yet.</div>}</div>
 }
 
 function Weekly({session,records,entries,reload}:{session:Session,records:any[],entries:DailyEntry[],reload:()=>void}) {

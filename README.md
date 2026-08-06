@@ -106,7 +106,7 @@ Replace the files in your GitHub repository with this package and commit them. V
 ## Updating the live app
 Upload and commit the extracted Version 1.2 files to the same GitHub repository. Vercel will automatically create a new deployment. Your existing Supabase database, login and environment variables remain unchanged.
 
-## Blueprint OS 2.0 Foundation
+## Blueprint OS 3.0 Intelligence Foundation
 This release reorganises the application around James rather than around business operations.
 
 ### New navigation
@@ -114,3 +114,16 @@ Home, Daily, Me, Relationships, Health, Goals, CEO, Analytics, Weekly, Business 
 
 ### Deployment
 Upload and commit the extracted files to the existing GitHub repository. Vercel will deploy automatically. Keep the existing Supabase project and environment variables. No SQL migration is required.
+
+
+## Blueprint OS 3.0 Intelligence
+- Stevie Daily Brief generated from your existing data
+- Transparent pattern detection for sleep, energy, mood, stress, exercise, recovery and relationship actions
+- Personalised next-action recommendation
+- Life Balance radar wheel
+- Morning dashboard with direct Daily and Stevie buttons
+- CEO and business pulse inside the briefing
+- No database migration or external AI key required
+
+## Privacy
+Version 3.0 uses local application rules against records already held in your Supabase account. It does not transmit your personal journal or wellbeing data to an external AI provider.
