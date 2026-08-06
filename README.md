@@ -105,3 +105,12 @@ Replace the files in your GitHub repository with this package and commit them. V
 
 ## Updating the live app
 Upload and commit the extracted Version 1.2 files to the same GitHub repository. Vercel will automatically create a new deployment. Your existing Supabase database, login and environment variables remain unchanged.
+
+## Blueprint OS 2.0 Foundation
+This release reorganises the application around James rather than around business operations.
+
+### New navigation
+Home, Daily, Me, Relationships, Health, Goals, CEO, Analytics, Weekly, Business Hub and Settings.
+
+### Deployment
+Upload and commit the extracted files to the existing GitHub repository. Vercel will deploy automatically. Keep the existing Supabase project and environment variables. No SQL migration is required.

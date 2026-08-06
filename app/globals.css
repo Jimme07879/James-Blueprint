@@ -57,3 +57,10 @@ textarea{min-height:82px;resize:vertical}
  .dailyProgress{grid-template-columns:1fr}
  .streakBadge{white-space:normal}
 }
+/* Blueprint OS 2.0 foundation */
+.brand{letter-spacing:.2px}
+.sidebar{background:linear-gradient(180deg,#11151a,#1c2229)}
+.card{transition:transform .15s ease,box-shadow .15s ease}
+.card:hover{box-shadow:0 8px 26px rgba(20,25,35,.07)}
+.loginCard{border-top:5px solid #1e2227}
+@media(max-width:900px){.nav button{padding:14px}}

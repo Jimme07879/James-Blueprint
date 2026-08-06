@@ -18,7 +18,7 @@ type DailyEntry = {
   gratitude?: string|null; tomorrow_mission?: string|null;
 };
 
-const tabs = ['Dashboard','Daily','History','Weekly','Business','Sales','Relationships','Health','Goals','Vision'];
+const tabs = ['Home','Daily','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -52,7 +52,7 @@ function Login() {
     if(error)setMessage(error.message);
   };
   return <div className="loginWrap"><form className="loginCard" onSubmit={submit}>
-    <h1>The James Blueprint</h1><p className="muted">Private cloud access</p>
+    <h1>Blueprint OS</h1><p className="muted">Designed for James · Private cloud</p>
     <div className="field"><label>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></div>
     <div className="field"><label>Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></div>
     <button className="btn primary" style={{width:'100%'}}>Sign in</button>
@@ -61,7 +61,7 @@ function Login() {
 }
 
 function BlueprintApp({session}:{session:Session}) {
-  const [tab,setTab]=useState('Dashboard');
+  const [tab,setTab]=useState('Home');
   const [daily,setDaily]=useState<DailyEntry>(blankDaily);
   const [entries,setEntries]=useState<DailyEntry[]>([]);
   const [sidebar,setSidebar]=useState(false);
@@ -98,7 +98,7 @@ function BlueprintApp({session}:{session:Session}) {
   const title=tab==='Daily'?'Daily Command Centre':tab;
   return <div className="shell">
     <aside className={`sidebar ${sidebar?'open':''}`}>
-      <div className="brand">THE JAMES BLUEPRINT<small>PRIVATE CLOUD</small></div>
+      <div className="brand">BLUEPRINT OS<small>DESIGNED FOR JAMES</small></div>
       <nav className="nav">{tabs.map(t=><button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);setSidebar(false)}}>{t}</button>)}</nav>
       <div className="sidebarFooter">{session.user.email}<br/><button className="btn" style={{marginTop:8}} onClick={()=>supabase.auth.signOut()}>Sign out</button></div>
     </aside>
@@ -106,16 +106,17 @@ function BlueprintApp({session}:{session:Session}) {
       <div className="topbar">
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
       </div>
-      {tab==='Dashboard'&&<Dashboard entries={entries} goals={goals} leads={leads}/>}
+      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
-      {tab==='History'&&<History entries={entries} edit={editDaily} remove={deleteDaily}/>}
-      {tab==='Weekly'&&<Weekly session={session} records={weekly} entries={entries} reload={loadAll}/>}
-      {tab==='Business'&&<Business session={session} value={business} reload={loadAll}/>}
-      {tab==='Sales'&&<Sales session={session} leads={leads} reload={loadAll}/>}
+      {tab==='Me'&&<MeCentre entries={entries} edit={editDaily}/>}
       {tab==='Relationships'&&<Relationships session={session} entries={entries} settings={settings} reload={loadAll}/>}
       {tab==='Health'&&<Health entries={entries}/>}
       {tab==='Goals'&&<Goals session={session} goals={goals} reload={loadAll}/>}
-      {tab==='Vision'&&<Vision session={session} settings={settings} reload={loadAll}/>}
+      {tab==='CEO'&&<CEOCentre entries={entries} business={business} leads={leads} setTab={setTab}/>}
+      {tab==='Analytics'&&<Analytics entries={entries}/>}
+      {tab==='Weekly'&&<Weekly session={session} records={weekly} entries={entries} reload={loadAll}/>}
+      {tab==='Business Hub'&&<BusinessIntegration business={business} leads={leads} setTab={setTab}/>}
+      {tab==='Settings'&&<Vision session={session} settings={settings} reload={loadAll}/>}
     </main>
   </div>
 }
@@ -175,7 +176,7 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
 
     <div className="grid cols2" style={{marginTop:18}}>
       <div className="card">
-        <h2>Today’s command centre</h2>
+        <h2>Today’s focus</h2>
         <div className="list">
           <div className="listItem"><strong>Mission</strong><br/>{latest?.mission||'Complete today’s Daily Command Centre.'}</div>
           <div className="listItem"><strong>Relationship action</strong><br/>{latest?.relationship_action||'Choose one small action that makes someone important feel valued.'}</div>
@@ -200,7 +201,7 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
 
     <div className="grid cols2" style={{marginTop:18}}>
       <div className="card">
-        <h2>Seven-day review</h2>
+        <h2>Life pulse — seven days</h2>
         <div className="list">
           <div className="listItem"><strong>Average energy</strong><div className="kpi">{avg(last7,'energy').toFixed(1)}/10</div></div>
           <div className="listItem"><strong>Average mood</strong><div className="kpi">{avg(last7,'mood').toFixed(1)}/10</div></div>
@@ -264,6 +265,62 @@ function DailyForm({value,setValue,save}:{value:DailyEntry,setValue:any,save:()=
 function Field({label,children}:{label:string,children:any}){return <div className="field"><label>{label}</label>{children}</div>}
 function Num({label,value,set,step}:{label:string,value:any,set:(v:any)=>void,step?:string}){return <Field label={`${label} (1–10 where applicable)`}><input type="number" min="0" max="24" step={step||"1"} value={value??''} onChange={e=>set(e.target.value===''?null:Number(e.target.value))}/></Field>}
 function Text({label,value,set,input}:{label:string,value:any,set:(v:string)=>void,input?:boolean}){return <Field label={label}>{input?<input value={value||''} onChange={e=>set(e.target.value)}/>:<textarea value={value||''} onChange={e=>set(e.target.value)}/>}</Field>}
+
+
+function MeCentre({entries,edit}:{entries:DailyEntry[],edit:(e:DailyEntry)=>void}) {
+  const latest=entries.at(-1);
+  const recent=entries.slice(-7);
+  const avg=(key:keyof DailyEntry)=>recent.length?recent.reduce((a,e)=>a+(Number(e[key])||0),0)/recent.length:0;
+  return <>
+    <div className="grid cols4">
+      <Kpi label="Mood" value={`${avg('mood').toFixed(1)}/10`}/>
+      <Kpi label="Energy" value={`${avg('energy').toFixed(1)}/10`}/>
+      <Kpi label="Focus" value={`${avg('focus').toFixed(1)}/10`}/>
+      <Kpi label="Confidence" value={`${avg('confidence').toFixed(1)}/10`}/>
+    </div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>What is on my mind?</h2><div className="listItem"><strong>Current lesson</strong><br/>{latest?.lesson||'Nothing recorded yet.'}</div><div className="listItem" style={{marginTop:10}}><strong>What I am avoiding</strong><br/>{latest?.avoiding||'Nothing recorded.'}</div></div>
+      <div className="card"><h2>Personal reflection</h2><div className="listItem"><strong>Recent wins</strong><br/>{latest?.wins||'Complete an evening review to capture your wins.'}</div><div className="listItem" style={{marginTop:10}}><strong>Gratitude</strong><br/>{latest?.gratitude||'Not entered yet.'}</div>{latest&&<button className="btn primary" style={{marginTop:12}} onClick={()=>edit(latest)}>Open today’s entry</button>}</div>
+    </div>
+  </>
+}
+
+function CEOCentre({entries,business,leads,setTab}:{entries:DailyEntry[],business:any,leads:any[],setTab:(t:string)=>void}) {
+  const latest=entries.at(-1);
+  const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
+  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
+  return <>
+    <div className="grid cols4">
+      <Kpi label="Weekly sales" value={money(business.sales_actual)}/>
+      <Kpi label="Gross profit" value={money(business.gross_profit)}/>
+      <Kpi label="Debtors" value={money(business.debtors)}/>
+      <Kpi label="Open opportunities" value={openLeads}/>
+    </div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>CEO focus</h2><div className="list"><div className="listItem"><strong>Biggest opportunity</strong><br/>{latest?.opportunity||'Not entered'}</div><div className="listItem"><strong>Biggest risk</strong><br/>{latest?.risk||'Not entered'}</div><div className="listItem"><strong>Decision I am avoiding</strong><br/>{latest?.avoiding||'None recorded'}</div></div></div>
+      <div className="card"><h2>Leverage</h2><div className="list"><div className="listItem"><strong>Delegate</strong><br/>{latest?.delegate_task||'Not entered'}</div><div className="listItem"><strong>Automate</strong><br/>{latest?.automate_task||'Not entered'}</div></div><button className="btn" style={{marginTop:12}} onClick={()=>setTab('Business Hub')}>Open Business Hub</button></div>
+    </div>
+  </>
+}
+
+function Analytics({entries}:{entries:DailyEntry[]}) {
+  const recent=entries.slice(-30);
+  const data=recent.map(e=>({date:e.entry_date.slice(5),mood:e.mood||0,energy:e.energy||0,stress:e.stress||0,sleep:e.sleep_hours||0,relationship:e.pillar_scores?.Relationships||0,life:e.pillar_scores?.Life||0}));
+  return <>
+    <div className="grid cols2"><ChartCard title="Mood, energy and stress" data={data} keys={['mood','energy','stress']}/><ChartCard title="Sleep trend" data={data} keys={['sleep']}/></div>
+    <div className="grid cols2" style={{marginTop:18}}><ChartCard title="Relationship trend" data={data} keys={['relationship']}/><ChartCard title="Life and enjoyment" data={data} keys={['life']}/></div>
+    <div className="card" style={{marginTop:18}}><h2>How to use this</h2><p className="muted">Look for patterns rather than perfect scores. The goal is to notice what improves your energy, mood, relationships and performance.</p></div>
+  </>
+}
+
+function BusinessIntegration({business,leads,setTab}:{business:any,leads:any[],setTab:(t:string)=>void}) {
+  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
+  return <>
+    <div className="card heroCard"><div><div className="kpiLabel">Business integration</div><div className="heroText">Your existing business dashboard will plug in here.</div></div><span className="streakBadge">Integration point ready</span></div>
+    <div className="grid cols4" style={{marginTop:18}}><Kpi label="Sales" value={money(business.sales_actual)}/><Kpi label="Gross profit" value={money(business.gross_profit)}/><Kpi label="Debtors" value={money(business.debtors)}/><Kpi label="Pipeline" value={leads.length}/></div>
+    <div className="grid cols2" style={{marginTop:18}}><div className="card"><h2>Current connection</h2><p className="muted">Blueprint OS currently stores your headline business snapshot and sales pipeline. Later, your full business dashboard can feed these figures automatically.</p><button className="btn primary" onClick={()=>setTab('CEO')}>Open CEO Dashboard</button></div><div className="card"><h2>Planned integration</h2><div className="list"><div className="listItem">Sales, GP, cash and debtors</div><div className="listItem">Open jobs and customer follow-ups</div><div className="listItem">One-click link to the full business dashboard</div></div></div></div>
+  </>
+}
 
 function History({entries,edit,remove}:{entries:DailyEntry[],edit:(e:DailyEntry)=>void,remove:(id?:string)=>void}) {
   return <div className="card"><h2>Daily records</h2>{entries.length?<table className="table"><thead><tr><th>Date</th><th>Mission</th><th>Sleep</th><th>Energy</th><th>Overall</th><th></th></tr></thead><tbody>{[...entries].reverse().map(e=><tr key={e.id}><td>{e.entry_date}</td><td>{e.mission}</td><td>{e.sleep_hours??'-'}</td><td>{e.energy??'-'}</td><td><span className="badge">{e.overall_score??'-'}/10</span></td><td><button className="btn" onClick={()=>edit(e)}>Open</button> <button className="btn danger" onClick={()=>remove(e.id)}>Delete</button></td></tr>)}</tbody></table>:<div className="muted">No records yet.</div>}</div>
