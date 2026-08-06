@@ -41,3 +41,19 @@ textarea{min-height:82px;resize:vertical}
  .main{padding:18px}.grid.cols2,.grid.cols3,.grid.cols4,.pillars{grid-template-columns:1fr}.checks{grid-template-columns:1fr 1fr}
  .mobileMenu{display:inline-block}.topbar{align-items:flex-start}
 }
+
+.heroCard{display:flex;justify-content:space-between;align-items:center;gap:18px;background:linear-gradient(135deg,#fff,#f0f2f5)}
+.heroText{font-size:22px;font-weight:800;margin-top:6px}
+.streakBadge{padding:10px 14px;border-radius:999px;background:#1e2227;color:white;font-size:13px;font-weight:800;white-space:nowrap}
+.dailyProgress{display:grid;grid-template-columns:minmax(190px,280px) 1fr;gap:18px;align-items:center}
+.progress{height:10px;background:#eceff2;border-radius:20px;overflow:hidden}
+.progress span{display:block;height:100%;background:#22262b;transition:width .25s ease}
+.progressWide{height:14px}
+.goalProgressNumber{font-size:20px;font-weight:800;margin-bottom:10px}
+.goalHeader{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:6px}
+.overdue{border-color:#d8a2a2;background:#fff8f8}
+@media(max-width:900px){
+ .heroCard{align-items:flex-start;flex-direction:column}
+ .dailyProgress{grid-template-columns:1fr}
+ .streakBadge{white-space:normal}
+}

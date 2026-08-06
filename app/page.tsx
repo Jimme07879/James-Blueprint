@@ -80,7 +80,10 @@ function BlueprintApp({session}:{session:Session}) {
       supabase.from('business_snapshots').select('*').order('snapshot_date',{ascending:false}).limit(1),
       supabase.from('app_settings').select('*').maybeSingle()
     ]);
-    setEntries(e||[]); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{});
+    const entryRows=(e||[]) as DailyEntry[];
+    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{});
+    const todaysEntry=entryRows.find(row=>row.entry_date===today);
+    setDaily(todaysEntry||blankDaily);
   };
   useEffect(()=>{loadAll()},[]);
 
@@ -106,7 +109,7 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='Dashboard'&&<Dashboard entries={entries} goals={goals} leads={leads}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='History'&&<History entries={entries} edit={editDaily} remove={deleteDaily}/>}
-      {tab==='Weekly'&&<Weekly session={session} records={weekly} reload={loadAll}/>}
+      {tab==='Weekly'&&<Weekly session={session} records={weekly} entries={entries} reload={loadAll}/>}
       {tab==='Business'&&<Business session={session} value={business} reload={loadAll}/>}
       {tab==='Sales'&&<Sales session={session} leads={leads} reload={loadAll}/>}
       {tab==='Relationships'&&<Relationships session={session} entries={entries} settings={settings} reload={loadAll}/>}
@@ -119,13 +122,33 @@ function BlueprintApp({session}:{session:Session}) {
 
 function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads:any[]}) {
   const recent=entries.slice(-30);
+  const last7=entries.slice(-7);
   const latest=entries.at(-1);
-  const avg=(key:keyof DailyEntry)=>recent.length?recent.reduce((a,e)=>a+(Number(e[key])||0),0)/recent.length:0;
+  const avg=(rows:DailyEntry[],key:keyof DailyEntry)=>rows.length?rows.reduce((a,e)=>a+(Number(e[key])||0),0)/rows.length:0;
   const chart=recent.map(e=>({date:e.entry_date.slice(5),overall:e.overall_score||0,sleep:e.sleep_hours||0,energy:e.energy||0}));
-  const completedPriorities=recent.reduce((n,e)=>n+[e.priority_1,e.priority_2,e.priority_3].filter(Boolean).length,0);
   const smokeFree=recent.filter(e=>e.habits?.['No smoking']).length;
   const exerciseDays=recent.filter(e=>e.habits?.Exercise).length;
   const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
+  const activeGoals=goals.filter(g=>g.status!=='Complete').length;
+  const completeGoals=goals.filter(g=>g.status==='Complete').length;
+  const habitStreak=(habit:string)=>{
+    let streak=0;
+    for(let i=entries.length-1;i>=0;i--){
+      if(entries[i].habits?.[habit]) streak++; else break;
+    }
+    return streak;
+  };
+  const entryStreak=()=>{
+    if(!entries.length)return 0;
+    let streak=0;
+    let cursor=new Date();
+    const dates=new Set(entries.map(e=>e.entry_date));
+    if(!dates.has(cursor.toISOString().slice(0,10))) cursor.setDate(cursor.getDate()-1);
+    while(dates.has(cursor.toISOString().slice(0,10))){
+      streak++; cursor.setDate(cursor.getDate()-1);
+    }
+    return streak;
+  };
   const quotes=[
     'Do the difficult thing before the easy thing.',
     'Small actions, repeated daily, build the future.',
@@ -135,27 +158,63 @@ function Dashboard({entries,goals,leads}:{entries:DailyEntry[],goals:any[],leads
   ];
   const quote=quotes[new Date().getDate()%quotes.length];
   return <>
-    <div className="card" style={{marginBottom:18}}>
-      <div className="kpiLabel">Today’s standard</div>
-      <div style={{fontSize:22,fontWeight:800,marginTop:6}}>{quote}</div>
+    <div className="card heroCard" style={{marginBottom:18}}>
+      <div>
+        <div className="kpiLabel">Today’s standard</div>
+        <div className="heroText">{quote}</div>
+      </div>
+      <div className="streakBadge">{entryStreak()} day check-in streak</div>
     </div>
+
     <div className="grid cols4">
-      <Kpi label="Saved days" value={entries.length}/>
-      <Kpi label="Average overall" value={`${avg('overall_score').toFixed(1)}/10`}/>
-      <Kpi label="Average sleep" value={`${avg('sleep_hours').toFixed(1)} hrs`}/>
-      <Kpi label="Open sales opportunities" value={openLeads}/>
+      <Kpi label="7-day overall" value={`${avg(last7,'overall_score').toFixed(1)}/10`}/>
+      <Kpi label="7-day sleep" value={`${avg(last7,'sleep_hours').toFixed(1)} hrs`}/>
+      <Kpi label="Open opportunities" value={openLeads}/>
+      <Kpi label="Active goals" value={activeGoals}/>
     </div>
+
     <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card"><h2>Today’s mission</h2><div className="listItem">{latest?.mission||'Complete today’s Daily Command Centre.'}</div><h3 style={{marginTop:16}}>Relationship action</h3><div className="listItem">{latest?.relationship_action||'Choose one small action that makes someone important feel valued.'}</div></div>
-      <div className="card"><h2>30-day momentum</h2><div className="grid cols2"><Kpi label="Exercise days" value={exerciseDays}/><Kpi label="Smoke-free days" value={smokeFree}/><Kpi label="Priority entries" value={completedPriorities}/><Kpi label="Active goals" value={goals.filter(g=>g.status!=='Complete').length}/></div></div>
+      <div className="card">
+        <h2>Today’s command centre</h2>
+        <div className="list">
+          <div className="listItem"><strong>Mission</strong><br/>{latest?.mission||'Complete today’s Daily Command Centre.'}</div>
+          <div className="listItem"><strong>Relationship action</strong><br/>{latest?.relationship_action||'Choose one small action that makes someone important feel valued.'}</div>
+          <div className="listItem"><strong>Tomorrow</strong><br/>{latest?.tomorrow_mission||'Not set yet.'}</div>
+        </div>
+      </div>
+      <div className="card">
+        <h2>Momentum & streaks</h2>
+        <div className="grid cols2">
+          <Kpi label="Exercise streak" value={`${habitStreak('Exercise')} days`}/>
+          <Kpi label="Smoke-free streak" value={`${habitStreak('No smoking')} days`}/>
+          <Kpi label="Exercise days / 30" value={exerciseDays}/>
+          <Kpi label="Smoke-free days / 30" value={smokeFree}/>
+        </div>
+      </div>
     </div>
+
     <div className="grid cols2" style={{marginTop:18}}>
       <ChartCard title="30-day overall score" data={chart} keys={['overall']}/>
       <ChartCard title="Sleep and energy" data={chart} keys={['sleep','energy']}/>
     </div>
+
     <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card"><h2>Tomorrow’s mission</h2><div className="listItem">{latest?.tomorrow_mission||'Not set yet.'}</div></div>
-      <div className="card"><h2>CEO focus</h2><div className="list"><div className="listItem"><strong>Opportunity</strong><br/>{latest?.opportunity||'Not entered'}</div><div className="listItem"><strong>Decision being avoided</strong><br/>{latest?.avoiding||'None recorded'}</div></div></div>
+      <div className="card">
+        <h2>Seven-day review</h2>
+        <div className="list">
+          <div className="listItem"><strong>Average energy</strong><div className="kpi">{avg(last7,'energy').toFixed(1)}/10</div></div>
+          <div className="listItem"><strong>Average mood</strong><div className="kpi">{avg(last7,'mood').toFixed(1)}/10</div></div>
+          <div className="listItem"><strong>Average stress</strong><div className="kpi">{avg(last7,'stress').toFixed(1)}/10</div></div>
+        </div>
+      </div>
+      <div className="card">
+        <h2>Goal progress</h2>
+        <div className="goalProgressNumber">{completeGoals} of {goals.length} complete</div>
+        <div className="progress"><span style={{width:`${goals.length?(completeGoals/goals.length)*100:0}%`}}></span></div>
+        <h3 style={{marginTop:18}}>CEO focus</h3>
+        <div className="listItem"><strong>Opportunity</strong><br/>{latest?.opportunity||'Not entered'}</div>
+        <div className="listItem" style={{marginTop:10}}><strong>Decision being avoided</strong><br/>{latest?.avoiding||'None recorded'}</div>
+      </div>
     </div>
   </>
 }
@@ -166,7 +225,21 @@ function ChartCard({title,data,keys}:{title:string,data:any[],keys:string[]}){re
 function DailyForm({value,setValue,save}:{value:DailyEntry,setValue:any,save:()=>void}) {
   const set=(k:keyof DailyEntry,v:any)=>setValue((p:DailyEntry)=>({...p,[k]:v}));
   const setP=(group:'pillar_scores'|'pillar_actions',k:string,v:any)=>setValue((p:DailyEntry)=>({...p,[group]:{...(p[group]||{}),[k]:v}}));
+  const required=[
+    value.sleep_hours,value.energy,value.mood,value.stress,value.focus,value.confidence,
+    value.mission,value.priority_1,value.relationship_action,value.relationship_promise,
+    value.wins,value.gratitude,value.tomorrow_mission,value.overall_score
+  ];
+  const completed=required.filter(v=>v!==null&&v!==undefined&&v!=='').length;
+  const completion=Math.round((completed/required.length)*100);
   return <>
+    <div className="card dailyProgress" style={{marginBottom:18}}>
+      <div>
+        <div className="kpiLabel">Today’s worksheet completion</div>
+        <div className="heroText">{completion}% complete</div>
+      </div>
+      <div className="progress progressWide"><span style={{width:`${completion}%`}}></span></div>
+    </div>
     <div className="notice">Complete the morning sections first, then finish the evening review before saving.</div>
     <div className="grid cols3">
       <div className="card"><h2>Day details</h2><Field label="Date"><input type="date" value={value.entry_date} onChange={e=>set('entry_date',e.target.value)}/></Field><Num label="Hours slept" value={value.sleep_hours} set={v=>set('sleep_hours',v)} step=".25"/><Num label="Sleep quality" value={value.sleep_quality} set={v=>set('sleep_quality',v)}/></div>
@@ -196,10 +269,27 @@ function History({entries,edit,remove}:{entries:DailyEntry[],edit:(e:DailyEntry)
   return <div className="card"><h2>Daily records</h2>{entries.length?<table className="table"><thead><tr><th>Date</th><th>Mission</th><th>Sleep</th><th>Energy</th><th>Overall</th><th></th></tr></thead><tbody>{[...entries].reverse().map(e=><tr key={e.id}><td>{e.entry_date}</td><td>{e.mission}</td><td>{e.sleep_hours??'-'}</td><td>{e.energy??'-'}</td><td><span className="badge">{e.overall_score??'-'}/10</span></td><td><button className="btn" onClick={()=>edit(e)}>Open</button> <button className="btn danger" onClick={()=>remove(e.id)}>Delete</button></td></tr>)}</tbody></table>:<div className="muted">No records yet.</div>}</div>
 }
 
-function Weekly({session,records,reload}:{session:Session,records:any[],reload:()=>void}) {
+function Weekly({session,records,entries,reload}:{session:Session,records:any[],entries:DailyEntry[],reload:()=>void}) {
   const [f,setF]=useState<any>({week_start:today});
+  const last7=entries.slice(-7);
+  const average=(key:keyof DailyEntry)=>last7.length?last7.reduce((a,e)=>a+(Number(e[key])||0),0)/last7.length:0;
+  const missions=last7.filter(e=>e.mission).length;
+  const exercise=last7.filter(e=>e.habits?.Exercise).length;
+  const smokeFree=last7.filter(e=>e.habits?.['No smoking']).length;
   const saveIt=async()=>{const {error}=await supabase.from('weekly_reviews').insert({...f,user_id:session.user.id});if(error)alert(error.message);else{setF({week_start:today});reload()}};
-  return <><div className="grid cols2"><div className="card"><h2>Weekly review</h2><Field label="Week commencing"><input type="date" value={f.week_start} onChange={e=>setF({...f,week_start:e.target.value})}/></Field><Text label="Biggest wins" value={f.wins} set={v=>setF({...f,wins:v})}/><Text label="Biggest lessons" value={f.lessons} set={v=>setF({...f,lessons:v})}/><Text label="What did not work?" value={f.not_worked} set={v=>setF({...f,not_worked:v})}/></div><div className="card"><h2>Next week</h2><Text label="Top priority" value={f.priority} set={v=>setF({...f,priority:v})}/><Text label="Three key actions" value={f.actions} set={v=>setF({...f,actions:v})}/><Text label="Relationship intention" value={f.relationship_intention} set={v=>setF({...f,relationship_intention:v})}/><Text label="Health intention" value={f.health_intention} set={v=>setF({...f,health_intention:v})}/><button className="btn primary" onClick={saveIt}>Save weekly review</button></div></div><div className="card" style={{marginTop:18}}><h2>Saved reviews</h2><div className="list">{records.map(r=><div className="listItem" key={r.id}><strong>{r.week_start}</strong><br/>{r.priority}</div>)}</div></div></>
+  return <>
+    <div className="grid cols4">
+      <Kpi label="7-day overall" value={`${average('overall_score').toFixed(1)}/10`}/>
+      <Kpi label="Missions set" value={`${missions}/7`}/>
+      <Kpi label="Exercise days" value={`${exercise}/7`}/>
+      <Kpi label="Smoke-free days" value={`${smokeFree}/7`}/>
+    </div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>Weekly review</h2><Field label="Week commencing"><input type="date" value={f.week_start} onChange={e=>setF({...f,week_start:e.target.value})}/></Field><Text label="Biggest wins" value={f.wins} set={v=>setF({...f,wins:v})}/><Text label="Biggest lessons" value={f.lessons} set={v=>setF({...f,lessons:v})}/><Text label="What did not work?" value={f.not_worked} set={v=>setF({...f,not_worked:v})}/></div>
+      <div className="card"><h2>Next week</h2><Text label="Top priority" value={f.priority} set={v=>setF({...f,priority:v})}/><Text label="Three key actions" value={f.actions} set={v=>setF({...f,actions:v})}/><Text label="Relationship intention" value={f.relationship_intention} set={v=>setF({...f,relationship_intention:v})}/><Text label="Health intention" value={f.health_intention} set={v=>setF({...f,health_intention:v})}/><button className="btn primary" onClick={saveIt}>Save weekly review</button></div>
+    </div>
+    <div className="card" style={{marginTop:18}}><h2>Saved reviews</h2><div className="list">{records.length?records.map(r=><div className="listItem" key={r.id}><strong>{r.week_start}</strong><br/><span className="muted">Priority:</span> {r.priority||'Not entered'}</div>):<div className="muted">No weekly reviews saved yet.</div>}</div></div>
+  </>
 }
 
 function Business({session,value,reload}:{session:Session,value:any,reload:()=>void}) {
@@ -230,9 +320,38 @@ function Health({entries}:{entries:DailyEntry[]}) {
 }
 
 function Goals({session,goals,reload}:{session:Session,goals:any[],reload:()=>void}) {
-  const [f,setF]=useState<any>({status:'Not started'}); const add=async()=>{const {error}=await supabase.from('goals').insert({...f,user_id:session.user.id});if(error)alert(error.message);else{setF({status:'Not started'});reload()}};
+  const [f,setF]=useState<any>({status:'Not started'});
+  const add=async()=>{if(!f.title?.trim()){alert('Add a goal or project name first.');return;}const {error}=await supabase.from('goals').insert({...f,user_id:session.user.id});if(error)alert(error.message);else{setF({status:'Not started'});reload()}};
   const del=async(id:string)=>{await supabase.from('goals').delete().eq('id',id);reload()};
-  return <div className="card"><h2>Goals & projects</h2><div className="grid cols4"><input placeholder="Goal or project" value={f.title||''} onChange={e=>setF({...f,title:e.target.value})}/><input placeholder="Next action" value={f.next_action||''} onChange={e=>setF({...f,next_action:e.target.value})}/><input type="date" value={f.deadline||''} onChange={e=>setF({...f,deadline:e.target.value})}/><select value={f.status} onChange={e=>setF({...f,status:e.target.value})}>{['Not started','In progress','Waiting','Complete'].map(x=><option key={x}>{x}</option>)}</select></div><button className="btn primary" style={{marginTop:10}} onClick={add}>Add goal</button><div className="list" style={{marginTop:18}}>{goals.map(g=><div className="listItem" key={g.id}><strong>{g.title}</strong> <span className="badge">{g.status}</span><div className="muted small">Next: {g.next_action||'Not set'} · Deadline: {g.deadline||'Not set'}</div><button className="btn danger" style={{marginTop:8}} onClick={()=>del(g.id)}>Delete</button></div>)}</div></div>
+  const updateStatus=async(id:string,status:string)=>{await supabase.from('goals').update({status}).eq('id',id);reload()};
+  const complete=goals.filter(g=>g.status==='Complete').length;
+  const overdue=(deadline:string,status:string)=>deadline&&status!=='Complete'&&new Date(deadline)<new Date(today);
+  return <>
+    <div className="grid cols4">
+      <Kpi label="Total goals" value={goals.length}/>
+      <Kpi label="In progress" value={goals.filter(g=>g.status==='In progress').length}/>
+      <Kpi label="Waiting" value={goals.filter(g=>g.status==='Waiting').length}/>
+      <Kpi label="Complete" value={complete}/>
+    </div>
+    <div className="card" style={{marginTop:18}}>
+      <h2>Add a goal or project</h2>
+      <div className="grid cols4"><input placeholder="Goal or project" value={f.title||''} onChange={e=>setF({...f,title:e.target.value})}/><input placeholder="Next action" value={f.next_action||''} onChange={e=>setF({...f,next_action:e.target.value})}/><input type="date" value={f.deadline||''} onChange={e=>setF({...f,deadline:e.target.value})}/><select value={f.status} onChange={e=>setF({...f,status:e.target.value})}>{['Not started','In progress','Waiting','Complete'].map(x=><option key={x}>{x}</option>)}</select></div>
+      <button className="btn primary" style={{marginTop:10}} onClick={add}>Add goal</button>
+    </div>
+    <div className="card" style={{marginTop:18}}>
+      <h2>Goal progress</h2>
+      <div className="goalProgressNumber">{complete} of {goals.length} complete</div>
+      <div className="progress"><span style={{width:`${goals.length?(complete/goals.length)*100:0}%`}}></span></div>
+      <div className="list" style={{marginTop:18}}>{goals.length?goals.map(g=><div className={`listItem ${overdue(g.deadline,g.status)?'overdue':''}`} key={g.id}>
+        <div className="goalHeader"><strong>{g.title}</strong><span className="badge">{g.status}</span></div>
+        <div className="muted small">Next: {g.next_action||'Not set'} · Deadline: {g.deadline||'Not set'} {overdue(g.deadline,g.status)?'· OVERDUE':''}</div>
+        <div className="actions" style={{marginTop:8}}>
+          {g.status!=='Complete'&&<button className="btn" onClick={()=>updateStatus(g.id,'Complete')}>Mark complete</button>}
+          <button className="btn danger" onClick={()=>del(g.id)}>Delete</button>
+        </div>
+      </div>):<div className="muted">No goals or projects yet.</div>}</div>
+    </div>
+  </>
 }
 
 function Vision({session,settings,reload}:{session:Session,settings:any,reload:()=>void}) {
