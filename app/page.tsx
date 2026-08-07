@@ -68,7 +68,7 @@ function Login() {
     if(error)setMessage(error.message);
   };
   return <div className="loginWrap"><form className="loginCard" onSubmit={submit}>
-    <h1>Blueprint OS</h1><p className="muted">Designed for James · Private cloud</p>
+    <div className="loginBrand">B</div><h1>Blueprint OS</h1><p className="muted">Designed for James · Private cloud</p>
     <div className="field"><label>Email</label><input type="email" value={email} onChange={e=>setEmail(e.target.value)} required/></div>
     <div className="field"><label>Password</label><input type="password" value={password} onChange={e=>setPassword(e.target.value)} required/></div>
     <button className="btn primary" style={{width:'100%'}}>Sign in</button>
@@ -78,6 +78,7 @@ function Login() {
 
 function BlueprintApp({session}:{session:Session}) {
   const [tab,setTab]=useState('Home');
+  const [theme,setTheme]=useState<'light'|'dark'>('light');
   const [daily,setDaily]=useState<DailyEntry>(blankDaily);
   const [entries,setEntries]=useState<DailyEntry[]>([]);
   const [sidebar,setSidebar]=useState(false);
@@ -108,6 +109,12 @@ function BlueprintApp({session}:{session:Session}) {
     setDaily(todaysEntry||blankDaily);
   };
   useEffect(()=>{loadAll()},[]);
+  useEffect(()=>{
+    const saved=localStorage.getItem('blueprint-theme') as 'light'|'dark'|null;
+    const preferred=saved||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    setTheme(preferred);
+  },[]);
+  const toggleTheme=()=>setTheme(current=>{const next=current==='dark'?'light':'dark';localStorage.setItem('blueprint-theme',next);return next;});
 
   const saveDaily=async()=>{
     const payload={...daily,user_id:session.user.id};
@@ -118,7 +125,7 @@ function BlueprintApp({session}:{session:Session}) {
   const deleteDaily=async(id?:string)=>{if(!id||!confirm('Delete this record?'))return;await supabase.from('daily_entries').delete().eq('id',id);loadAll()};
 
   const title=tab==='Daily'?'Daily Command Centre':tab;
-  return <div className="shell">
+  return <div className={`shell theme-${theme}`}>
     <aside className={`sidebar ${sidebar?'open':''}`}>
       <div className="brand">BLUEPRINT OS<small>DESIGNED FOR JAMES</small></div>
       <nav className="nav">{tabs.map(t=><button key={t} className={tab===t?'active':''} onClick={()=>{setTab(t);setSidebar(false)}}>{t}</button>)}</nav>
@@ -127,6 +134,7 @@ function BlueprintApp({session}:{session:Session}) {
     <main className="main">
       <div className="topbar">
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
+        <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
       {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
@@ -220,7 +228,7 @@ function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[
   const last7=entries.slice(-7);
   const avg=(key:keyof DailyEntry)=>numericAverage(last7.map(e=>e[key] as number));
   return <>
-    <div className="card stevieMain">
+    <div className="card stevieMain stevieConversation">
       <div className="stevieMark">S</div>
       <div>
         <div className="kpiLabel">Stevie Daily Brief</div>
@@ -398,7 +406,7 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setT
   const blueprint=calculateBlueprintScore(entries);
   const decisionsDue=decisionItems.filter(i=>i.review_status!=='Reviewed'&&i.review_date&&i.review_date<=today).length;
   return <>
-    <div className="card heroCard intelligenceHero" style={{marginBottom:18}}>
+    <div className="card heroCard intelligenceHero executiveHero" style={{marginBottom:18}}>
       <div>
         <div className="kpiLabel">{greeting}, James</div>
         <div className="heroText">{latest?.mission||'Set today’s mission and decide what matters most.'}</div>
@@ -483,7 +491,7 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setT
   </>
 }
 
-function Kpi({label,value}:{label:string,value:any}){return <div className="card"><div className="kpiLabel">{label}</div><div className="kpi">{value}</div></div>}
+function Kpi({label,value}:{label:string,value:any}){return <div className="card kpiCard"><div className="kpiLabel">{label}</div><div className="kpi">{value}</div></div>}
 function ChartCard({title,data,keys}:{title:string,data:any[],keys:string[]}){return <div className="card"><h2>{title}</h2><div style={{width:'100%',height:240}}><ResponsiveContainer><LineChart data={data}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip/>{keys.map((k,i)=><Line key={k} type="monotone" dataKey={k} stroke={i===0?'#22262b':'#8d98a5'} strokeWidth={2}/>)}</LineChart></ResponsiveContainer></div></div>}
 
 function DailyForm({value,setValue,save}:{value:DailyEntry,setValue:any,save:()=>void}) {

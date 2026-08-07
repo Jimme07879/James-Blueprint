@@ -141,3 +141,6 @@ Adds Proof Timeline and Blueprint Vault. Run `supabase/v4_0_north_star.sql` once
 - Home decision review card
 
 Run `supabase/v5_0_decision_journal.sql` once before using the Decisions module.
+
+## Version 5.1 — Executive Edition
+Adds a premium mobile-first visual system, persistent dark mode, improved Home and Stevie presentation, refined cards and controls, and a redesigned login experience. No SQL migration is required.
