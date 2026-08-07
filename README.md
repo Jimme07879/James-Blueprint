@@ -131,3 +131,13 @@ Version 3.0 uses local application rules against records already held in your Su
 
 ## Version 4.0
 Adds Proof Timeline and Blueprint Vault. Run `supabase/v4_0_north_star.sql` once, then deploy the code update.
+
+
+## Blueprint OS 5.0 — Judgement & Balance
+- Blueprint Score on Home
+- Weighted score breakdown
+- Decision Journal
+- Decision review dates and lessons
+- Home decision review card
+
+Run `supabase/v5_0_decision_journal.sql` once before using the Decisions module.

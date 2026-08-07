@@ -26,7 +26,15 @@ type ProofItem = {
 type VaultItem = {
   id?: string; section: string; title: string; content: string; created_at?: string; updated_at?: string;
 };
-const tabs = ['Home','Daily','Stevie','Proof','Vault','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+
+
+type DecisionItem = {
+  id?: string; title: string; decision_date: string; category?: string|null; context?: string|null;
+  options_considered?: string|null; decision_made: string; expected_outcome?: string|null;
+  review_date?: string|null; review_status?: string|null; actual_outcome?: string|null;
+  lesson?: string|null; created_at?: string;
+};
+const tabs = ['Home','Daily','Stevie','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -80,9 +88,10 @@ function BlueprintApp({session}:{session:Session}) {
   const [settings,setSettings]=useState<any>({});
   const [proofItems,setProofItems]=useState<ProofItem[]>([]);
   const [vaultItems,setVaultItems]=useState<VaultItem[]>([]);
+  const [decisionItems,setDecisionItems]=useState<DecisionItem[]>([]);
 
   const loadAll=async()=>{
-    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v}] = await Promise.all([
+    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d}] = await Promise.all([
       supabase.from('daily_entries').select('*').order('entry_date'),
       supabase.from('weekly_reviews').select('*').order('week_start',{ascending:false}),
       supabase.from('sales_leads').select('*').order('created_at',{ascending:false}),
@@ -90,10 +99,11 @@ function BlueprintApp({session}:{session:Session}) {
       supabase.from('business_snapshots').select('*').order('snapshot_date',{ascending:false}).limit(1),
       supabase.from('app_settings').select('*').maybeSingle(),
       supabase.from('proof_items').select('*').order('proof_date',{ascending:false}),
-      supabase.from('vault_items').select('*').order('updated_at',{ascending:false})
+      supabase.from('vault_items').select('*').order('updated_at',{ascending:false}),
+      supabase.from('decision_items').select('*').order('decision_date',{ascending:false})
     ]);
     const entryRows=(e||[]) as DailyEntry[];
-    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]);
+    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]); setDecisionItems((d||[]) as DecisionItem[]);
     const todaysEntry=entryRows.find(row=>row.entry_date===today);
     setDaily(todaysEntry||blankDaily);
   };
@@ -118,11 +128,12 @@ function BlueprintApp({session}:{session:Session}) {
       <div className="topbar">
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
       </div>
-      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} setTab={setTab}/>}
+      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
+      {tab==='Decisions'&&<DecisionJournal session={session} items={decisionItems} reload={loadAll}/>}
       {tab==='Me'&&<MeCentre entries={entries} edit={editDaily}/>}
       {tab==='Relationships'&&<Relationships session={session} entries={entries} settings={settings} reload={loadAll}/>}
       {tab==='Health'&&<Health entries={entries}/>}
@@ -305,7 +316,54 @@ function BlueprintVault({session,items,reload}:{session:Session,items:VaultItem[
   </>
 }
 
-function Dashboard({entries,goals,leads,proofItems,vaultItems,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],setTab:(t:string)=>void}) {
+function calculateBlueprintScore(entries:DailyEntry[]) {
+  const last7=entries.slice(-7);
+  const average=(values:(number|null|undefined)[])=>numericAverage(values);
+  const health=average(last7.map(e=>{
+    const sleep=Math.min(10,Math.max(0,(Number(e.sleep_hours)||0)/7*10));
+    const energy=Number(e.energy)||0;
+    return (sleep+energy)/2;
+  }));
+  const relationships=average(last7.map(e=>e.pillar_scores?.Relationships));
+  const ceo=average(last7.map(e=>e.pillar_scores?.Business));
+  const growth=average(last7.map(e=>e.pillar_scores?.Growth));
+  const recovery=last7.length?last7.filter(e=>e.habits?.['Recovery time']).length/last7.length*10:0;
+  const reflection=last7.length?last7.filter(e=>e.wins||e.gratitude||e.lesson).length/last7.length*10:0;
+  const components=[
+    {label:'Health',score:health,weight:25},
+    {label:'Relationships',score:relationships,weight:20},
+    {label:'CEO',score:ceo,weight:20},
+    {label:'Growth',score:growth,weight:15},
+    {label:'Recovery',score:recovery,weight:10},
+    {label:'Reflection',score:reflection,weight:10}
+  ];
+  const available=components.filter(c=>c.score>0);
+  const totalWeight=available.reduce((n,c)=>n+c.weight,0);
+  const score=totalWeight?Math.round(available.reduce((n,c)=>n+c.score*c.weight,0)/totalWeight*10):0;
+  return {score,components};
+}
+
+function DecisionJournal({session,items,reload}:{session:Session,items:DecisionItem[],reload:()=>void}) {
+  const [form,setForm]=useState<DecisionItem>({title:'',decision_date:today,category:'Personal',decision_made:'',review_status:'Open'});
+  const add=async()=>{
+    if(!form.title.trim()||!form.decision_made.trim()){alert('Add a decision title and what you decided.');return;}
+    const {error}=await supabase.from('decision_items').insert({...form,user_id:session.user.id});
+    if(error)alert(error.message);else{setForm({title:'',decision_date:today,category:'Personal',decision_made:'',review_status:'Open'});reload();}
+  };
+  const update=async(id:string,updates:Partial<DecisionItem>)=>{const {error}=await supabase.from('decision_items').update(updates).eq('id',id);if(error)alert(error.message);else reload();};
+  const remove=async(id?:string)=>{if(!id||!confirm('Delete this decision?'))return;await supabase.from('decision_items').delete().eq('id',id);reload();};
+  const due=items.filter(i=>i.review_status!=='Reviewed'&&i.review_date&&i.review_date<=today);
+  return <>
+    <div className="card decisionHero"><div><div className="kpiLabel">Improve judgement over time</div><div className="heroText">Decision Journal</div><p className="muted">Record what you decided, why, what you expect to happen, and what the result eventually taught you.</p></div><div className="streakBadge">{due.length} reviews due</div></div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>Record a decision</h2><Text label="Decision title" value={form.title} set={v=>setForm({...form,title:v})} input/><div className="grid cols2"><Field label="Decision date"><input type="date" value={form.decision_date} onChange={e=>setForm({...form,decision_date:e.target.value})}/></Field><Field label="Category"><select value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})}><option>Personal</option><option>CEO</option><option>Relationship</option><option>Health</option><option>Money</option><option>Growth</option></select></Field></div><Text label="Context — what was happening?" value={form.context} set={v=>setForm({...form,context:v})}/><Text label="Options considered" value={form.options_considered} set={v=>setForm({...form,options_considered:v})}/><Text label="What did you decide?" value={form.decision_made} set={v=>setForm({...form,decision_made:v})}/><Text label="Expected outcome" value={form.expected_outcome} set={v=>setForm({...form,expected_outcome:v})}/><Field label="Review date"><input type="date" value={form.review_date||''} onChange={e=>setForm({...form,review_date:e.target.value})}/></Field><button className="btn primary" onClick={add}>Save decision</button></div>
+      <div className="card"><h2>Reviews due</h2><div className="list">{due.length?due.map(item=><div className="listItem" key={item.id}><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.review_date}</span></div><p>{item.decision_made}</p><Text label="What actually happened?" value={item.actual_outcome} set={v=>update(item.id!,{actual_outcome:v})}/><Text label="Lesson" value={item.lesson} set={v=>update(item.id!,{lesson:v})}/><button className="btn primary" onClick={()=>update(item.id!,{review_status:'Reviewed'})}>Mark reviewed</button></div>):<div className="muted">No decision reviews are due.</div>}</div></div>
+    </div>
+    <div className="card" style={{marginTop:18}}><h2>Decision history</h2>{items.length?<div className="decisionGrid">{items.map(item=><div className="listItem decisionItem" key={item.id}><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.category}</span></div><div className="muted small">{item.decision_date} · Review: {item.review_date||'Not set'} · {item.review_status||'Open'}</div>{item.context&&<p><strong>Context:</strong> {item.context}</p>}<p><strong>Decision:</strong> {item.decision_made}</p>{item.expected_outcome&&<p><strong>Expected:</strong> {item.expected_outcome}</p>}{item.actual_outcome&&<p><strong>Actual:</strong> {item.actual_outcome}</p>}{item.lesson&&<p><strong>Lesson:</strong> {item.lesson}</p>}<button className="btn danger" onClick={()=>remove(item.id)}>Delete</button></div>)}</div>:<div className="muted">Start with one meaningful personal or CEO decision you want to learn from later.</div>}</div>
+  </>
+}
+
+function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],setTab:(t:string)=>void}) {
   const recent=entries.slice(-30);
   const last7=entries.slice(-7);
   const latest=entries.at(-1);
@@ -337,6 +395,8 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,setTab}:{entries:D
     return streak;
   };
   const brief=buildStevieBrief(entries,goals,leads);
+  const blueprint=calculateBlueprintScore(entries);
+  const decisionsDue=decisionItems.filter(i=>i.review_status!=='Reviewed'&&i.review_date&&i.review_date<=today).length;
   return <>
     <div className="card heroCard intelligenceHero" style={{marginBottom:18}}>
       <div>
@@ -350,7 +410,13 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,setTab}:{entries:D
       <div className="streakBadge">{entryStreak()} day check-in streak</div>
     </div>
 
+    <div className="grid scoreGrid">
+      <div className="card blueprintScoreCard"><div className="scoreRing" style={{'--score':`${blueprint.score}%`} as React.CSSProperties}><div><strong>{blueprint.score}</strong><span>/100</span></div></div><div><div className="kpiLabel">Blueprint Score</div><h2>{blueprint.score>=80?'Strong balance':blueprint.score>=60?'Moving forward':'Needs attention'}</h2><p className="muted">A weighted seven-day view of health, relationships, CEO focus, growth, recovery and reflection.</p></div></div>
+      <div className="card"><h2>Score breakdown</h2><div className="scoreBreakdown">{blueprint.components.map(c=><div key={c.label}><div className="goalHeader"><strong>{c.label}</strong><span>{c.score.toFixed(1)}/10</span></div><div className="progress"><span style={{width:`${Math.min(100,c.score*10)}%`}}></span></div></div>)}</div></div>
+    </div>
+
     <div className="grid cols4">
+
       <Kpi label="7-day overall" value={`${avg(last7,'overall_score').toFixed(1)}/10`}/>
       <Kpi label="7-day sleep" value={`${avg(last7,'sleep_hours').toFixed(1)} hrs`}/>
       <Kpi label="Open opportunities" value={openLeads}/>
@@ -394,7 +460,7 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,setTab}:{entries:D
       </div>
     </div>
 
-    <div className="grid cols2" style={{marginTop:18}}>
+    <div className="grid cols3" style={{marginTop:18}}>
       <div className="card">
         <div className="goalHeader"><h2>Proof</h2><button className="btn" onClick={()=>setTab('Proof')}>Open timeline</button></div>
         {proofItems.length?<div className="listItem"><strong>{proofItems[0].title}</strong><br/><span className="muted small">{proofItems[0].proof_date} · {proofItems[0].category||'Achievement'}</span><br/>{proofItems[0].story||''}</div>:<div className="muted">Record the difficult things you have done so you can look back when confidence dips.</div>}
@@ -402,7 +468,12 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,setTab}:{entries:D
       <div className="card">
         <div className="goalHeader"><h2>Blueprint Vault</h2><button className="btn" onClick={()=>setTab('Vault')}>Open vault</button></div>
         {vaultItems.length?<div className="listItem"><strong>{vaultItems[0].title}</strong><br/><span className="muted small">{vaultItems[0].section}</span><br/>{vaultItems[0].content}</div>:<div className="muted">Store your vision, values, principles, goals and lessons here.</div>}
+      </div>      <div className="card">
+        <div className="goalHeader"><h2>Decisions</h2><button className="btn" onClick={()=>setTab('Decisions')}>Open journal</button></div>
+        <div className="kpi">{decisionsDue}</div><div className="muted">reviews due</div>
+        {decisionItems.length?<div className="listItem" style={{marginTop:12}}><strong>{decisionItems[0].title}</strong><br/><span className="muted small">{decisionItems[0].decision_date} · {decisionItems[0].category}</span><br/>{decisionItems[0].decision_made}</div>:<div className="muted" style={{marginTop:12}}>Record important choices and review whether they worked.</div>}
       </div>
+
     </div>
 
     <div className="grid cols2" style={{marginTop:18}}>
