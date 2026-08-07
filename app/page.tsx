@@ -18,7 +18,15 @@ type DailyEntry = {
   gratitude?: string|null; tomorrow_mission?: string|null;
 };
 
-const tabs = ['Home','Daily','Stevie','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+
+type ProofItem = {
+  id?: string; title: string; proof_date: string; category?: string|null; story?: string|null; created_at?: string;
+};
+
+type VaultItem = {
+  id?: string; section: string; title: string; content: string; created_at?: string; updated_at?: string;
+};
+const tabs = ['Home','Daily','Stevie','Proof','Vault','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -70,18 +78,22 @@ function BlueprintApp({session}:{session:Session}) {
   const [goals,setGoals]=useState<any[]>([]);
   const [business,setBusiness]=useState<any>({});
   const [settings,setSettings]=useState<any>({});
+  const [proofItems,setProofItems]=useState<ProofItem[]>([]);
+  const [vaultItems,setVaultItems]=useState<VaultItem[]>([]);
 
   const loadAll=async()=>{
-    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s}] = await Promise.all([
+    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v}] = await Promise.all([
       supabase.from('daily_entries').select('*').order('entry_date'),
       supabase.from('weekly_reviews').select('*').order('week_start',{ascending:false}),
       supabase.from('sales_leads').select('*').order('created_at',{ascending:false}),
       supabase.from('goals').select('*').order('created_at',{ascending:false}),
       supabase.from('business_snapshots').select('*').order('snapshot_date',{ascending:false}).limit(1),
-      supabase.from('app_settings').select('*').maybeSingle()
+      supabase.from('app_settings').select('*').maybeSingle(),
+      supabase.from('proof_items').select('*').order('proof_date',{ascending:false}),
+      supabase.from('vault_items').select('*').order('updated_at',{ascending:false})
     ]);
     const entryRows=(e||[]) as DailyEntry[];
-    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{});
+    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]);
     const todaysEntry=entryRows.find(row=>row.entry_date===today);
     setDaily(todaysEntry||blankDaily);
   };
@@ -106,9 +118,11 @@ function BlueprintApp({session}:{session:Session}) {
       <div className="topbar">
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
       </div>
-      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} setTab={setTab}/>}
+      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
+      {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
+      {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
       {tab==='Me'&&<MeCentre entries={entries} edit={editDaily}/>}
       {tab==='Relationships'&&<Relationships session={session} entries={entries} settings={settings} reload={loadAll}/>}
       {tab==='Health'&&<Health entries={entries}/>}
@@ -253,7 +267,45 @@ function InsightCard({title,items,empty,tone}:{title:string,items:string[],empty
   return <div className={`card insightCard ${tone}`}><h2>{title}</h2><div className="list">{items.length?items.map((item,i)=><div className="listItem" key={i}>{item}</div>):<div className="muted">{empty}</div>}</div></div>
 }
 
-function Dashboard({entries,goals,leads,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],setTab:(t:string)=>void}) {
+
+function ProofTimeline({session,items,reload}:{session:Session,items:ProofItem[],reload:()=>void}) {
+  const [form,setForm]=useState<ProofItem>({title:'',proof_date:today,category:'Achievement',story:''});
+  const add=async()=>{
+    if(!form.title.trim()){alert('Add a title first.');return;}
+    const {error}=await supabase.from('proof_items').insert({...form,user_id:session.user.id});
+    if(error)alert(error.message);else{setForm({title:'',proof_date:today,category:'Achievement',story:''});reload();}
+  };
+  const remove=async(id?:string)=>{if(!id||!confirm('Delete this proof item?'))return;await supabase.from('proof_items').delete().eq('id',id);reload();};
+  return <>
+    <div className="card proofHero"><div><div className="kpiLabel">Evidence beats self-doubt</div><div className="heroText">Your Proof Timeline</div><p className="muted">Record difficult things completed, promises kept, milestones reached and moments you are proud of.</p></div><div className="streakBadge">{items.length} proof items</div></div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>Add proof</h2><Text label="What did you do?" value={form.title} set={v=>setForm({...form,title:v})} input/><div className="grid cols2"><Field label="Date"><input type="date" value={form.proof_date} onChange={e=>setForm({...form,proof_date:e.target.value})}/></Field><Field label="Category"><select value={form.category||''} onChange={e=>setForm({...form,category:e.target.value})}><option>Achievement</option><option>Courage</option><option>Health</option><option>Relationship</option><option>CEO</option><option>Learning</option><option>Personal</option></select></Field></div><Text label="Why does this matter?" value={form.story} set={v=>setForm({...form,story:v})}/><button className="btn primary" onClick={add}>Save to Proof</button></div>
+      <div className="card"><h2>Latest evidence</h2><div className="list">{items.slice(0,4).map(item=><div className="listItem" key={item.id}><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.category}</span></div><div className="muted small">{item.proof_date}</div>{item.story&&<p>{item.story}</p>}</div>)}</div></div>
+    </div>
+    <div className="card" style={{marginTop:18}}><h2>Full timeline</h2>{items.length?<div className="timeline">{items.map(item=><div className="timelineItem" key={item.id}><div className="timelineDot"></div><div className="listItem"><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.proof_date}</span></div><div className="muted small">{item.category}</div>{item.story&&<p>{item.story}</p>}<button className="btn danger" onClick={()=>remove(item.id)}>Delete</button></div></div>)}</div>:<div className="muted">Your first proof could be: “I built and deployed my own cloud software instead of giving up.”</div>}</div>
+  </>
+}
+
+function BlueprintVault({session,items,reload}:{session:Session,items:VaultItem[],reload:()=>void}) {
+  const [form,setForm]=useState<VaultItem>({section:'Vision',title:'',content:''});
+  const add=async()=>{
+    if(!form.title.trim()||!form.content.trim()){alert('Add a title and content first.');return;}
+    const {error}=await supabase.from('vault_items').insert({...form,user_id:session.user.id});
+    if(error)alert(error.message);else{setForm({section:'Vision',title:'',content:''});reload();}
+  };
+  const remove=async(id?:string)=>{if(!id||!confirm('Delete this vault item?'))return;await supabase.from('vault_items').delete().eq('id',id);reload();};
+  const sections=['Vision','Values','Principles','Annual Goals','Lessons','Ideas','Quotes'];
+  return <>
+    <div className="card vaultHero"><div><div className="kpiLabel">Your permanent reference point</div><div className="heroText">Blueprint Vault</div><p className="muted">Keep the ideas, standards and lessons that should guide your decisions over time.</p></div><div className="streakBadge">{items.length} saved items</div></div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card"><h2>Add to the vault</h2><Field label="Section"><select value={form.section} onChange={e=>setForm({...form,section:e.target.value})}>{sections.map(s=><option key={s}>{s}</option>)}</select></Field><Text label="Title" value={form.title} set={v=>setForm({...form,title:v})} input/><Text label="Content" value={form.content} set={v=>setForm({...form,content:v})}/><button className="btn primary" onClick={add}>Save to Vault</button></div>
+      <div className="card"><h2>North Star</h2><div className="coachCallout">Use the Vault to answer: <strong>What matters most, and what kind of man and CEO am I choosing to become?</strong></div><div className="list" style={{marginTop:12}}>{sections.map(section=><div className="listItem" key={section}><strong>{section}</strong><br/><span className="muted small">{items.filter(i=>i.section===section).length} saved</span></div>)}</div></div>
+    </div>
+    <div className="card" style={{marginTop:18}}><h2>Saved vault</h2>{items.length?<div className="vaultGrid">{items.map(item=><div className="listItem vaultItem" key={item.id}><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.section}</span></div><p>{item.content}</p><button className="btn danger" onClick={()=>remove(item.id)}>Delete</button></div>)}</div>:<div className="muted">Start with your vision for December 2026, your values, and the principle you want to follow when things feel difficult.</div>}</div>
+  </>
+}
+
+function Dashboard({entries,goals,leads,proofItems,vaultItems,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],setTab:(t:string)=>void}) {
   const recent=entries.slice(-30);
   const last7=entries.slice(-7);
   const latest=entries.at(-1);
@@ -339,6 +391,17 @@ function Dashboard({entries,goals,leads,setTab}:{entries:DailyEntry[],goals:any[
         <div className="progress"><span style={{width:`${goals.length?(completeGoals/goals.length)*100:0}%`}}></span></div>
         <h3 style={{marginTop:18}}>Decision being avoided</h3>
         <div className="listItem">{latest?.avoiding||'Nothing recorded today.'}</div>
+      </div>
+    </div>
+
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card">
+        <div className="goalHeader"><h2>Proof</h2><button className="btn" onClick={()=>setTab('Proof')}>Open timeline</button></div>
+        {proofItems.length?<div className="listItem"><strong>{proofItems[0].title}</strong><br/><span className="muted small">{proofItems[0].proof_date} · {proofItems[0].category||'Achievement'}</span><br/>{proofItems[0].story||''}</div>:<div className="muted">Record the difficult things you have done so you can look back when confidence dips.</div>}
+      </div>
+      <div className="card">
+        <div className="goalHeader"><h2>Blueprint Vault</h2><button className="btn" onClick={()=>setTab('Vault')}>Open vault</button></div>
+        {vaultItems.length?<div className="listItem"><strong>{vaultItems[0].title}</strong><br/><span className="muted small">{vaultItems[0].section}</span><br/>{vaultItems[0].content}</div>:<div className="muted">Store your vision, values, principles, goals and lessons here.</div>}
       </div>
     </div>
 

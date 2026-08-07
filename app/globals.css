@@ -81,3 +81,7 @@ textarea{min-height:82px;resize:vertical}
  .stevieMain{grid-template-columns:1fr}
  .briefHeadline{font-size:24px}
 }
+.proofHero,.vaultHero{display:flex;justify-content:space-between;align-items:center;gap:18px;background:linear-gradient(135deg,#fff,#f1f3f6)}
+.timeline{position:relative;display:grid;gap:14px;padding-left:24px}.timeline:before{content:"";position:absolute;left:7px;top:5px;bottom:5px;width:2px;background:#dfe3e8}.timelineItem{position:relative}.timelineDot{position:absolute;left:-22px;top:18px;width:12px;height:12px;border-radius:50%;background:#1e2227;border:3px solid #fff;box-shadow:0 0 0 1px #cfd5dc}
+.vaultGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.vaultItem p{line-height:1.55;white-space:pre-wrap}
+@media(max-width:900px){.proofHero,.vaultHero{align-items:flex-start;flex-direction:column}.vaultGrid{grid-template-columns:1fr}}
