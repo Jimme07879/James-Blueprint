@@ -155,3 +155,25 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
  .kpiCard{min-height:96px}.kpi{font-size:27px}.scoreGrid{grid-template-columns:1fr!important}
  .checks{grid-template-columns:1fr}.actions .btn{flex:1}
 }
+
+
+/* Blueprint OS 5.2 — Steve Ops / Outlook */
+.emailConnect,.emailHero{display:grid;grid-template-columns:64px 1fr;gap:18px;align-items:center}
+.emailHero{grid-template-columns:1fr auto}
+.inboxBriefCard{margin:18px 0;background:linear-gradient(135deg,var(--panel),var(--panel-2))}
+.inboxBriefTop{display:flex;justify-content:space-between;align-items:center;gap:14px}
+.inboxBriefTop h2{margin:5px 0 0}
+.emailMiniGrid{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}
+.emailMiniGrid span{padding:9px 12px;border-radius:999px;background:var(--soft);font-size:13px}
+.emailMiniGrid strong{font-size:16px}
+.emailRow{transition:.15s ease}
+.emailUnread{border-left:4px solid var(--accent)}
+.emailPreview{color:var(--muted);font-size:13px;line-height:1.5;margin:8px 0 10px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.emailOpen{display:inline-block;text-decoration:none;width:auto}
+@media(max-width:900px){
+  .emailConnect,.emailHero{grid-template-columns:1fr}
+  .emailHero .actions{width:100%}
+  .inboxBriefTop{align-items:flex-start;flex-direction:column}
+  .inboxBriefTop .btn{width:100%}
+  .emailMiniGrid{display:grid;grid-template-columns:1fr 1fr;width:100%}
+}

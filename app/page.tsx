@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { connectMicrosoft, disconnectMicrosoft, getMicrosoftAccount, getInboxMessages, type OutlookMessage } from '../lib/microsoft';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 
 type DailyEntry = {
@@ -34,7 +35,20 @@ type DecisionItem = {
   review_date?: string|null; review_status?: string|null; actual_outcome?: string|null;
   lesson?: string|null; created_at?: string;
 };
-const tabs = ['Home','Daily','Stevie','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+
+type EmailSummary = {
+  connected: boolean;
+  account?: string;
+  messages: OutlookMessage[];
+  unread: number;
+  action: number;
+  routineOrders: number;
+  urgent: number;
+  loading: boolean;
+  error?: string;
+};
+
+const tabs = ['Home','Daily','Stevie','Email','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -90,6 +104,7 @@ function BlueprintApp({session}:{session:Session}) {
   const [proofItems,setProofItems]=useState<ProofItem[]>([]);
   const [vaultItems,setVaultItems]=useState<VaultItem[]>([]);
   const [decisionItems,setDecisionItems]=useState<DecisionItem[]>([]);
+  const [emailSummary,setEmailSummary]=useState<EmailSummary>({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:true});
 
   const loadAll=async()=>{
     const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d}] = await Promise.all([
@@ -109,6 +124,37 @@ function BlueprintApp({session}:{session:Session}) {
     setDaily(todaysEntry||blankDaily);
   };
   useEffect(()=>{loadAll()},[]);
+
+  const refreshEmail=async()=>{
+    const clientId=process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID;
+    if(!clientId){
+      setEmailSummary({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:false,error:'Microsoft connection not configured yet.'});
+      return;
+    }
+    try{
+      const account=await getMicrosoftAccount();
+      if(!account){
+        setEmailSummary({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:false});
+        return;
+      }
+      const messages=await getInboxMessages(30);
+      const routine=(m:OutlookMessage)=>{
+        const sender=(m.from?.emailAddress?.address||'').toLowerCase();
+        const subject=(m.subject||'').toLowerCase();
+        return sender.includes('fresho.com') || /^order f\d+/.test(subject);
+      };
+      const urgent=(m:OutlookMessage)=>/urgent|overdue|payment|invoice|action required|final notice|credit hold/i.test(m.subject||'');
+      const unread=messages.filter(m=>!m.isRead).length;
+      const routineOrders=messages.filter(routine).length;
+      const urgentCount=messages.filter(urgent).length;
+      const action=messages.filter(m=>urgent(m)||(!m.isRead&&!routine(m))).length;
+      setEmailSummary({connected:true,account:account.username,messages,unread,action,routineOrders,urgent:urgentCount,loading:false});
+    }catch(err:any){
+      setEmailSummary({connected:true,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:false,error:err?.message||'Could not load Outlook.'});
+    }
+  };
+  useEffect(()=>{refreshEmail()},[]);
+
   useEffect(()=>{
     const saved=localStorage.getItem('blueprint-theme') as 'light'|'dark'|null;
     const preferred=saved||(window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
@@ -136,8 +182,9 @@ function BlueprintApp({session}:{session:Session}) {
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
         <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
-      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} setTab={setTab}/>}
+      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
+      {tab==='Email'&&<EmailCentre summary={emailSummary} refresh={refreshEmail}/>} 
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
@@ -231,7 +278,7 @@ function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[
     <div className="card stevieMain stevieConversation">
       <div className="stevieMark">S</div>
       <div>
-        <div className="kpiLabel">Stevie Daily Brief</div>
+        <div className="kpiLabel">Steve’s Daily Ops Brief</div>
         <h1 className="briefHeadline">{brief.headline}</h1>
         <p className="briefSummary">{brief.summary}</p>
         <div className="coachCallout"><strong>Best next action:</strong><br/>{brief.action}</div>
@@ -276,7 +323,7 @@ function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[
     </div>
 
     <div className="card" style={{marginTop:18}}>
-      <h2>How Stevie works</h2>
+      <h2>How Steve works</h2>
       <p className="muted">This briefing currently uses transparent rules based on your own saved sleep, energy, mood, stress, habits, relationship actions, goals and CEO entries. It does not send personal data to an external AI service.</p>
     </div>
   </>
@@ -286,6 +333,68 @@ function InsightCard({title,items,empty,tone}:{title:string,items:string[],empty
   return <div className={`card insightCard ${tone}`}><h2>{title}</h2><div className="list">{items.length?items.map((item,i)=><div className="listItem" key={i}>{item}</div>):<div className="muted">{empty}</div>}</div></div>
 }
 
+
+
+function EmailCentre({summary,refresh}:{summary:EmailSummary,refresh:()=>void}) {
+  const classify=(m:OutlookMessage)=>{
+    const sender=(m.from?.emailAddress?.address||'').toLowerCase();
+    const subject=(m.subject||'').toLowerCase();
+    if(/urgent|overdue|payment|invoice|action required|final notice|credit hold/i.test(subject)) return 'Needs attention';
+    if(sender.includes('fresho.com') || /^order f\d+/.test(subject)) return 'Routine order';
+    if(!m.isRead) return 'Unread';
+    return 'Read';
+  };
+  if(!process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID){
+    return <div className="card emailConnect"><div className="stevieMark">S</div><div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><h2>Email connection needs one final setup step</h2><p className="muted">Add the Microsoft Client ID to Vercel, then come back here to connect Outlook.</p></div></div>;
+  }
+  if(!summary.connected){
+    return <div className="card emailConnect"><div className="stevieMark">S</div><div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><h2>Connect your Outlook inbox</h2><p className="muted">Steve will surface emails that need attention, separate routine order notifications, and let you jump straight into Outlook.</p><button className="btn primary" onClick={()=>connectMicrosoft()}>Connect Outlook</button></div></div>;
+  }
+  const actionMessages=summary.messages.filter(m=>classify(m)==='Needs attention'||classify(m)==='Unread');
+  const routine=summary.messages.filter(m=>classify(m)==='Routine order');
+  return <>
+    <div className="card emailHero">
+      <div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><div className="heroText">Inbox Brief</div><p className="muted">{summary.account||'Outlook connected'}</p></div>
+      <div className="actions"><button className="btn" onClick={refresh}>Refresh inbox</button><button className="btn" onClick={()=>disconnectMicrosoft()}>Disconnect</button></div>
+    </div>
+    {summary.error&&<div className="notice" style={{marginTop:18}}>{summary.error}</div>}
+    <div className="grid cols4" style={{marginTop:18}}>
+      <Kpi label="Unread" value={summary.unread}/>
+      <Kpi label="Needs attention" value={summary.action}/>
+      <Kpi label="Routine orders" value={summary.routineOrders}/>
+      <Kpi label="Urgent signals" value={summary.urgent}/>
+    </div>
+    <div className="grid cols2" style={{marginTop:18}}>
+      <div className="card">
+        <h2>Steve says: deal with these first</h2>
+        <div className="list">
+          {actionMessages.length?actionMessages.slice(0,12).map(m=><EmailRow key={m.id} message={m} label={classify(m)}/>):<div className="muted">Nothing obvious needs attention in the latest messages.</div>}
+        </div>
+      </div>
+      <div className="card">
+        <h2>Routine order traffic</h2>
+        <div className="list">
+          {routine.length?routine.slice(0,12).map(m=><EmailRow key={m.id} message={m} label="Routine order"/>):<div className="muted">No routine order emails in the current view.</div>}
+        </div>
+      </div>
+    </div>
+    <div className="card" style={{marginTop:18}}>
+      <h2>Recent inbox</h2>
+      <div className="list">{summary.messages.slice(0,20).map(m=><EmailRow key={m.id} message={m} label={classify(m)}/>)}</div>
+    </div>
+  </>;
+}
+
+function EmailRow({message,label}:{message:OutlookMessage,label:string}) {
+  const sender=message.from?.emailAddress?.name||message.from?.emailAddress?.address||'Unknown sender';
+  const received=message.receivedDateTime?new Date(message.receivedDateTime).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  return <div className={`listItem emailRow ${!message.isRead?'emailUnread':''}`}>
+    <div className="goalHeader"><strong>{message.subject||'(No subject)'}</strong><span className="badge">{label}</span></div>
+    <div className="muted small">{sender} · {received}</div>
+    {message.bodyPreview&&<p className="emailPreview">{message.bodyPreview}</p>}
+    {message.webLink&&<a className="btn emailOpen" href={message.webLink} target="_blank" rel="noreferrer">Open in Outlook</a>}
+  </div>;
+}
 
 function ProofTimeline({session,items,reload}:{session:Session,items:ProofItem[],reload:()=>void}) {
   const [form,setForm]=useState<ProofItem>({title:'',proof_date:today,category:'Achievement',story:''});
@@ -371,7 +480,7 @@ function DecisionJournal({session,items,reload}:{session:Session,items:DecisionI
   </>
 }
 
-function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],setTab:(t:string)=>void}) {
+function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,emailSummary,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],emailSummary:EmailSummary,setTab:(t:string)=>void}) {
   const recent=entries.slice(-30);
   const last7=entries.slice(-7);
   const latest=entries.at(-1);
@@ -412,7 +521,7 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setT
         <div className="heroText">{latest?.mission||'Set today’s mission and decide what matters most.'}</div>
         <div className="actions" style={{marginTop:14}}>
           <button className="btn primary" onClick={()=>setTab('Daily')}>Open Daily Command Centre</button>
-          <button className="btn" onClick={()=>setTab('Stevie')}>Read Stevie Brief</button>
+          <button className="btn" onClick={()=>setTab('Stevie')}>Read Steve’s Brief</button>
         </div>
       </div>
       <div className="streakBadge">{entryStreak()} day check-in streak</div>
@@ -421,6 +530,16 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setT
     <div className="grid scoreGrid">
       <div className="card blueprintScoreCard"><div className="scoreRing" style={{'--score':`${blueprint.score}%`} as React.CSSProperties}><div><strong>{blueprint.score}</strong><span>/100</span></div></div><div><div className="kpiLabel">Blueprint Score</div><h2>{blueprint.score>=80?'Strong balance':blueprint.score>=60?'Moving forward':'Needs attention'}</h2><p className="muted">A weighted seven-day view of health, relationships, CEO focus, growth, recovery and reflection.</p></div></div>
       <div className="card"><h2>Score breakdown</h2><div className="scoreBreakdown">{blueprint.components.map(c=><div key={c.label}><div className="goalHeader"><strong>{c.label}</strong><span>{c.score.toFixed(1)}/10</span></div><div className="progress"><span style={{width:`${Math.min(100,c.score*10)}%`}}></span></div></div>)}</div></div>
+    </div>
+
+    <div className="card inboxBriefCard">
+      <div className="inboxBriefTop">
+        <div><div className="kpiLabel">Steve’s Inbox Brief</div><h2>{emailSummary.connected?`${emailSummary.action} email${emailSummary.action===1?'':'s'} need attention`:'Outlook not connected'}</h2></div>
+        <button className="btn" onClick={()=>setTab('Email')}>{emailSummary.connected?'Open Email Focus':'Connect Outlook'}</button>
+      </div>
+      {emailSummary.connected?
+        <div className="emailMiniGrid"><span><strong>{emailSummary.unread}</strong> unread</span><span><strong>{emailSummary.routineOrders}</strong> routine orders</span><span><strong>{emailSummary.urgent}</strong> urgent signals</span></div>:
+        <p className="muted">Connect Outlook so Steve can separate routine traffic from messages that deserve your attention.</p>}
     </div>
 
     <div className="grid cols4">
@@ -433,11 +552,11 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,setT
 
     <div className="grid cols2" style={{marginTop:18}}>
       <div className="card steviePreview">
-        <div className="kpiLabel">Stevie’s priority</div>
+        <div className="kpiLabel">Steve’s priority</div>
         <h2>{brief.headline}</h2>
         <p className="muted">{brief.summary}</p>
         <div className="coachCallout">{brief.action}</div>
-        <button className="btn" style={{marginTop:12}} onClick={()=>setTab('Stevie')}>See full briefing</button>
+        <button className="btn" style={{marginTop:12}} onClick={()=>setTab('Stevie')}>See Steve’s full brief</button>
       </div>
       <div className="card">
         <h2>Today’s balance</h2>

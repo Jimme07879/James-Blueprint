@@ -144,3 +144,7 @@ Run `supabase/v5_0_decision_journal.sql` once before using the Decisions module.
 
 ## Version 5.1 — Executive Edition
 Adds a premium mobile-first visual system, persistent dark mode, improved Home and Stevie presentation, refined cards and controls, and a redesigned login experience. No SQL migration is required.
+
+
+## Blueprint OS 5.2 — Steve Ops
+Adds the Outlook Email Focus module and Steve's Inbox Brief. Follow `MICROSOFT_EMAIL_SETUP.md` and add `NEXT_PUBLIC_MICROSOFT_CLIENT_ID` to Vercel.
