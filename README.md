@@ -148,3 +148,6 @@ Adds a premium mobile-first visual system, persistent dark mode, improved Home a
 
 ## Blueprint OS 5.2 — Steve Ops
 Adds the Outlook Email Focus module and Steve's Inbox Brief. Follow `MICROSOFT_EMAIL_SETUP.md` and add `NEXT_PUBLIC_MICROSOFT_CLIENT_ID` to Vercel.
+
+## Version 5.3 — Steve Inbox Ops
+The Email centre now triages live Outlook mail into action, orders, supplier/finance and routine buckets. Message handled state is synced to Supabase, and emails can be converted into Inbox Tasks using the existing Goals table.

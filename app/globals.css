@@ -177,3 +177,12 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
   .inboxBriefTop .btn{width:100%}
   .emailMiniGrid{display:grid;grid-template-columns:1fr 1fr;width:100%}
 }
+
+/* Blueprint OS 5.3 — Steve Inbox Ops */
+.emailOpsHero{background:radial-gradient(circle at 95% 5%,rgba(74,111,169,.15),transparent 36%),linear-gradient(135deg,var(--panel),var(--panel-solid))}
+.inboxControl{padding-bottom:16px}.emailStatusLine{display:flex;gap:8px;flex-wrap:wrap}.emailStatusLine span{background:var(--soft);border:1px solid var(--line);padding:7px 10px;border-radius:999px;font-size:12px;color:var(--muted)}
+.emailFilters{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.emailFilter{border:1px solid var(--line);background:var(--panel-solid);color:var(--ink);padding:9px 12px;border-radius:999px;font-weight:700;cursor:pointer}.emailFilter.active{background:var(--accent);color:var(--panel-solid);border-color:transparent}.theme-dark .emailFilter.active{background:#e7edf6;color:#10151d}
+.emailOpsGrid{grid-template-columns:minmax(0,1.55fr) minmax(300px,.75fr)}.inboxTaskCard{align-self:start;position:sticky;top:100px}.emailActions{gap:8px;flex-wrap:wrap}.emailActions .emailOpen{margin:0}.emailHandled{opacity:.72;border-left:4px solid #72806f}.emailHandled strong{text-decoration:line-through;text-decoration-color:rgba(100,110,120,.45)}
+.emailBadge.needs-action{background:#fae2df;color:#7b2620}.emailBadge.supplier-and-finance{background:#f7ead0;color:#7a5818}.emailBadge.order{background:#dce9f8;color:#244c7a}.emailBadge.routine{background:#e2efe8;color:#315f46}.emailBadge.handled{background:#e6e9ed;color:#58616d}.emailBadge.unread{background:#e6e9f7;color:#424d80}
+@media(max-width:1050px){.emailOpsGrid{grid-template-columns:1fr}.inboxTaskCard{position:static}}
+@media(max-width:700px){.emailFilters{display:grid;grid-template-columns:1fr 1fr}.emailFilter{width:100%}.emailStatusLine{width:100%}.emailActions .btn,.emailActions .emailOpen{flex:1;text-align:center}}

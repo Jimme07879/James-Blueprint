@@ -10,6 +10,7 @@ export type OutlookMessage = {
   bodyPreview?: string;
   webLink?: string;
   from?: { emailAddress?: { name?: string; address?: string } };
+  handled?: boolean;
 };
 
 const clientId=process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID;

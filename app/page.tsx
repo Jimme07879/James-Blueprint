@@ -44,6 +44,7 @@ type EmailSummary = {
   action: number;
   routineOrders: number;
   urgent: number;
+  handled: number;
   loading: boolean;
   error?: string;
 };
@@ -104,7 +105,7 @@ function BlueprintApp({session}:{session:Session}) {
   const [proofItems,setProofItems]=useState<ProofItem[]>([]);
   const [vaultItems,setVaultItems]=useState<VaultItem[]>([]);
   const [decisionItems,setDecisionItems]=useState<DecisionItem[]>([]);
-  const [emailSummary,setEmailSummary]=useState<EmailSummary>({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:true});
+  const [emailSummary,setEmailSummary]=useState<EmailSummary>({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,handled:0,loading:true});
 
   const loadAll=async()=>{
     const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d}] = await Promise.all([
@@ -128,29 +129,54 @@ function BlueprintApp({session}:{session:Session}) {
   const refreshEmail=async()=>{
     const clientId=process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID;
     if(!clientId){
-      setEmailSummary({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:false,error:'Microsoft connection not configured yet.'});
+      setEmailSummary({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,handled:0,loading:false,error:'Microsoft connection not configured yet.'});
       return;
     }
     try{
       const account=await getMicrosoftAccount();
       if(!account){
-        setEmailSummary({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:false});
+        setEmailSummary({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,handled:0,loading:false});
         return;
       }
-      const messages=await getInboxMessages(30);
+      const messages=await getInboxMessages(50);
+      // Keep a private cloud copy of message metadata so Steve can remember what James has handled.
+      if(messages.length){
+        const rows=messages.map(m=>({
+          user_id:session.user.id,
+          external_id:m.id,
+          subject:m.subject||null,
+          sender_name:m.from?.emailAddress?.name||null,
+          sender_address:m.from?.emailAddress?.address||null,
+          received_at:m.receivedDateTime||new Date().toISOString(),
+          is_read:!!m.isRead,
+          importance:m.importance||'normal',
+          has_attachments:!!m.hasAttachments,
+          body_preview:m.bodyPreview||null,
+          web_link:m.webLink||null,
+          source:'outlook'
+        }));
+        await supabase.from('email_messages').upsert(rows,{onConflict:'user_id,external_id',ignoreDuplicates:false});
+      }
+      const {data:emailRows}=await supabase.from('email_messages').select('external_id,handled').eq('user_id',session.user.id);
+      const handledMap=new Map((emailRows||[]).map((r:any)=>[r.external_id,!!r.handled]));
+      const enriched=messages.map(m=>({...m,handled:handledMap.get(m.id)||false})) as (OutlookMessage & {handled?:boolean})[];
       const routine=(m:OutlookMessage)=>{
         const sender=(m.from?.emailAddress?.address||'').toLowerCase();
         const subject=(m.subject||'').toLowerCase();
-        return sender.includes('fresho.com') || /^order f\d+/.test(subject);
+        return sender.includes('fresho.com') || sender.includes('no-reply') || sender.includes('noreply') || /order confirmation|your order has|delivery confirmation|dispatch/i.test(subject);
       };
-      const urgent=(m:OutlookMessage)=>/urgent|overdue|payment|invoice|action required|final notice|credit hold/i.test(m.subject||'');
-      const unread=messages.filter(m=>!m.isRead).length;
-      const routineOrders=messages.filter(routine).length;
-      const urgentCount=messages.filter(urgent).length;
-      const action=messages.filter(m=>urgent(m)||(!m.isRead&&!routine(m))).length;
-      setEmailSummary({connected:true,account:account.username,messages,unread,action,routineOrders,urgent:urgentCount,loading:false});
+      const finance=(m:OutlookMessage)=>/invoice|statement|remittance|payment|credit|overdue|price increase|account|direct debit|vat|balance/i.test(`${m.subject||''} ${m.bodyPreview||''}`);
+      const order=(m:OutlookMessage)=>/\border\b|purchase order|po number|new order|order request|quantit(y|ies)|delivery for/i.test(`${m.subject||''} ${m.bodyPreview||''}`);
+      const urgent=(m:OutlookMessage)=>m.importance==='high'||/urgent|overdue|action required|final notice|credit hold|today|asap|problem|shortage|complaint/i.test(`${m.subject||''} ${m.bodyPreview||''}`);
+      const active=enriched.filter(m=>!m.handled);
+      const unread=active.filter(m=>!m.isRead).length;
+      const routineOrders=active.filter(m=>routine(m)||order(m)).length;
+      const urgentCount=active.filter(urgent).length;
+      const action=active.filter(m=>urgent(m)||finance(m)||(!m.isRead&&!routine(m))).length;
+      const handled=enriched.filter(m=>m.handled).length;
+      setEmailSummary({connected:true,account:account.username,messages:enriched,unread,action,routineOrders,urgent:urgentCount,handled,loading:false});
     }catch(err:any){
-      setEmailSummary({connected:true,messages:[],unread:0,action:0,routineOrders:0,urgent:0,loading:false,error:err?.message||'Could not load Outlook.'});
+      setEmailSummary({connected:true,messages:[],unread:0,action:0,routineOrders:0,urgent:0,handled:0,loading:false,error:err?.message||'Could not load Outlook.'});
     }
   };
   useEffect(()=>{refreshEmail()},[]);
@@ -184,7 +210,7 @@ function BlueprintApp({session}:{session:Session}) {
       </div>
       {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
-      {tab==='Email'&&<EmailCentre summary={emailSummary} refresh={refreshEmail}/>} 
+      {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
@@ -317,7 +343,7 @@ function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[
           <Kpi label="Weekly sales" value={business?.sales_actual?`£${Number(business.sales_actual).toLocaleString('en-GB')}`:'Not entered'}/>
           <Kpi label="Gross profit" value={business?.gross_profit?`£${Number(business.gross_profit).toLocaleString('en-GB')}`:'Not entered'}/>
           <Kpi label="Open leads" value={leads.filter(l=>!['Won','Lost'].includes(l.stage)).length}/>
-          <Kpi label="Active goals" value={goals.filter(g=>g.status!=='Complete').length}/>
+          <Kpi label="Active goals" value={goals.filter(g=>g.status!=='Complete'&&g.status!=='Inbox task').length}/>
         </div>
       </div>
     </div>
@@ -335,64 +361,103 @@ function InsightCard({title,items,empty,tone}:{title:string,items:string[],empty
 
 
 
-function EmailCentre({summary,refresh}:{summary:EmailSummary,refresh:()=>void}) {
-  const classify=(m:OutlookMessage)=>{
-    const sender=(m.from?.emailAddress?.address||'').toLowerCase();
-    const subject=(m.subject||'').toLowerCase();
-    if(/urgent|overdue|payment|invoice|action required|final notice|credit hold/i.test(subject)) return 'Needs attention';
-    if(sender.includes('fresho.com') || /^order f\d+/.test(subject)) return 'Routine order';
-    if(!m.isRead) return 'Unread';
-    return 'Read';
+function EmailCentre({session,summary,refresh,goals,reload}:{session:Session,summary:EmailSummary,refresh:()=>void,goals:any[],reload:()=>void}) {
+  const [filter,setFilter]=useState<'Needs Action'|'Orders'|'Supplier & Finance'|'Routine'|'Handled'>('Needs Action');
+  const [busy,setBusy]=useState<string|null>(null);
+  const text=(m:OutlookMessage)=>`${m.subject||''} ${m.bodyPreview||''}`.toLowerCase();
+  const sender=(m:OutlookMessage)=>(m.from?.emailAddress?.address||'').toLowerCase();
+  const isRoutine=(m:OutlookMessage)=>sender(m).includes('fresho.com')||sender(m).includes('no-reply')||sender(m).includes('noreply')||/order confirmation|your order has|delivery confirmation|dispatch/.test(text(m));
+  const isFinance=(m:OutlookMessage)=>/invoice|statement|remittance|payment|credit|overdue|price increase|account|direct debit|vat|balance/.test(text(m));
+  const isOrder=(m:OutlookMessage)=>/\border\b|purchase order|po number|new order|order request|quantity|quantities|delivery for/.test(text(m));
+  const isUrgent=(m:OutlookMessage)=>m.importance==='high'||/urgent|overdue|action required|final notice|credit hold|today|asap|problem|shortage|complaint/.test(text(m));
+  const isHandled=(m:OutlookMessage)=>!!(m as OutlookMessage & {handled?:boolean}).handled;
+  const needsAction=(m:OutlookMessage)=>!isHandled(m)&&(isUrgent(m)||isFinance(m)||(!m.isRead&&!isRoutine(m)));
+  const primaryLabel=(m:OutlookMessage)=>isHandled(m)?'Handled':isFinance(m)?'Supplier & Finance':isOrder(m)?'Order':isRoutine(m)?'Routine':isUrgent(m)?'Needs Action':!m.isRead?'Unread':'FYI';
+  const filtered=summary.messages.filter(m=>{
+    if(filter==='Handled')return isHandled(m);
+    if(filter==='Needs Action')return needsAction(m);
+    if(filter==='Orders')return !isHandled(m)&&(isOrder(m)||isRoutine(m));
+    if(filter==='Supplier & Finance')return !isHandled(m)&&isFinance(m);
+    return !isHandled(m)&&isRoutine(m);
+  });
+  const financeCount=summary.messages.filter(m=>!isHandled(m)&&isFinance(m)).length;
+  const orderCount=summary.messages.filter(m=>!isHandled(m)&&(isOrder(m)||isRoutine(m))).length;
+  const inboxTasks=goals.filter(g=>g.status==='Inbox task');
+  const brief=summary.action
+    ? `${summary.action} message${summary.action===1?'':'s'} need your attention. ${orderCount} look order-related and ${financeCount} are supplier/finance.`
+    : `Inbox is under control. ${orderCount} order-related message${orderCount===1?'':'s'} are in the current view.`;
+
+  const markHandled=async(m:OutlookMessage)=>{
+    setBusy(m.id);
+    const {error}=await supabase.from('email_messages').update({handled:true}).eq('user_id',session.user.id).eq('external_id',m.id);
+    setBusy(null);
+    if(error) alert(error.message); else refresh();
   };
+  const reopen=async(m:OutlookMessage)=>{
+    setBusy(m.id);
+    const {error}=await supabase.from('email_messages').update({handled:false}).eq('user_id',session.user.id).eq('external_id',m.id);
+    setBusy(null);
+    if(error) alert(error.message); else refresh();
+  };
+  const createTask=async(m:OutlookMessage)=>{
+    setBusy(m.id);
+    const who=m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Email';
+    const next=[`From: ${who}`,m.bodyPreview?.slice(0,180),m.webLink].filter(Boolean).join(' · ');
+    const {error}=await supabase.from('goals').insert({user_id:session.user.id,title:m.subject||'Inbox follow-up',next_action:next,deadline:today,status:'Inbox task'});
+    if(!error) await supabase.from('email_messages').update({handled:true}).eq('user_id',session.user.id).eq('external_id',m.id);
+    setBusy(null);
+    if(error) alert(error.message); else {await reload();await refresh();}
+  };
+  const completeTask=async(id:string)=>{await supabase.from('goals').delete().eq('id',id);reload();};
+
   if(!process.env.NEXT_PUBLIC_MICROSOFT_CLIENT_ID){
     return <div className="card emailConnect"><div className="stevieMark">S</div><div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><h2>Email connection needs one final setup step</h2><p className="muted">Add the Microsoft Client ID to Vercel, then come back here to connect Outlook.</p></div></div>;
   }
   if(!summary.connected){
-    return <div className="card emailConnect"><div className="stevieMark">S</div><div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><h2>Connect your Outlook inbox</h2><p className="muted">Steve will surface emails that need attention, separate routine order notifications, and let you jump straight into Outlook.</p><button className="btn primary" onClick={()=>connectMicrosoft()}>Connect Outlook</button></div></div>;
+    return <div className="card emailConnect"><div className="stevieMark">S</div><div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><h2>Connect your Outlook inbox</h2><p className="muted">Steve will triage the inbox, surface actions, separate order traffic and turn emails into follow-up tasks.</p><button className="btn primary" onClick={()=>connectMicrosoft()}>Connect Outlook</button></div></div>;
   }
-  const actionMessages=summary.messages.filter(m=>classify(m)==='Needs attention'||classify(m)==='Unread');
-  const routine=summary.messages.filter(m=>classify(m)==='Routine order');
   return <>
-    <div className="card emailHero">
-      <div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><div className="heroText">Inbox Brief</div><p className="muted">{summary.account||'Outlook connected'}</p></div>
+    <div className="card emailHero emailOpsHero">
+      <div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><div className="heroText">Inbox Ops</div><p className="briefSummary">{brief}</p><p className="muted small">{summary.account||'Outlook connected'}</p></div>
       <div className="actions"><button className="btn" onClick={refresh}>Refresh inbox</button><button className="btn" onClick={()=>disconnectMicrosoft()}>Disconnect</button></div>
     </div>
     {summary.error&&<div className="notice" style={{marginTop:18}}>{summary.error}</div>}
     <div className="grid cols4" style={{marginTop:18}}>
-      <Kpi label="Unread" value={summary.unread}/>
-      <Kpi label="Needs attention" value={summary.action}/>
-      <Kpi label="Routine orders" value={summary.routineOrders}/>
-      <Kpi label="Urgent signals" value={summary.urgent}/>
+      <Kpi label="Needs action" value={summary.action}/>
+      <Kpi label="Orders" value={orderCount}/>
+      <Kpi label="Supplier & finance" value={financeCount}/>
+      <Kpi label="Inbox tasks" value={inboxTasks.length}/>
     </div>
-    <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card">
-        <h2>Steve says: deal with these first</h2>
-        <div className="list">
-          {actionMessages.length?actionMessages.slice(0,12).map(m=><EmailRow key={m.id} message={m} label={classify(m)}/>):<div className="muted">Nothing obvious needs attention in the latest messages.</div>}
-        </div>
-      </div>
-      <div className="card">
-        <h2>Routine order traffic</h2>
-        <div className="list">
-          {routine.length?routine.slice(0,12).map(m=><EmailRow key={m.id} message={m} label="Routine order"/>):<div className="muted">No routine order emails in the current view.</div>}
-        </div>
-      </div>
+    <div className="card inboxControl" style={{marginTop:18}}>
+      <div className="inboxBriefTop"><div><div className="kpiLabel">Steve's triage</div><h2>What do you want to see?</h2></div><div className="emailStatusLine"><span>{summary.unread} unread</span><span>{summary.urgent} urgent</span><span>{summary.handled} handled</span></div></div>
+      <div className="emailFilters">{(['Needs Action','Orders','Supplier & Finance','Routine','Handled'] as const).map(x=><button key={x} className={`emailFilter ${filter===x?'active':''}`} onClick={()=>setFilter(x)}>{x}</button>)}</div>
     </div>
-    <div className="card" style={{marginTop:18}}>
-      <h2>Recent inbox</h2>
-      <div className="list">{summary.messages.slice(0,20).map(m=><EmailRow key={m.id} message={m} label={classify(m)}/>)}</div>
+    <div className="grid emailOpsGrid" style={{marginTop:18}}>
+      <div className="card">
+        <div className="goalHeader"><h2>{filter}</h2><span className="badge">{filtered.length}</span></div>
+        <div className="list">{filtered.length?filtered.slice(0,30).map(m=><EmailRow key={m.id} message={m} label={primaryLabel(m)} busy={busy===m.id} handled={isHandled(m)} createTask={()=>createTask(m)} markHandled={()=>markHandled(m)} reopen={()=>reopen(m)}/>):<div className="muted">Nothing in this bucket right now.</div>}</div>
+      </div>
+      <div className="card inboxTaskCard">
+        <div className="kpiLabel">Action board</div><h2>Tasks created from email</h2>
+        <div className="list">{inboxTasks.length?inboxTasks.slice(0,12).map(t=><div className="listItem" key={t.id}><div className="goalHeader"><strong>{t.title}</strong><span className="badge">Inbox task</span></div><div className="muted small">Due {t.deadline||'not set'}</div><p className="emailPreview">{t.next_action}</p><button className="btn" onClick={()=>completeTask(t.id)}>Complete & remove</button></div>):<div className="muted">Use “Create task” on any email that needs a follow-up. It will appear here and in Goals.</div>}</div>
+      </div>
     </div>
   </>;
 }
 
-function EmailRow({message,label}:{message:OutlookMessage,label:string}) {
+function EmailRow({message,label,busy,handled,createTask,markHandled,reopen}:{message:OutlookMessage,label:string,busy:boolean,handled:boolean,createTask:()=>void,markHandled:()=>void,reopen:()=>void}) {
   const sender=message.from?.emailAddress?.name||message.from?.emailAddress?.address||'Unknown sender';
   const received=message.receivedDateTime?new Date(message.receivedDateTime).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
-  return <div className={`listItem emailRow ${!message.isRead?'emailUnread':''}`}>
-    <div className="goalHeader"><strong>{message.subject||'(No subject)'}</strong><span className="badge">{label}</span></div>
-    <div className="muted small">{sender} · {received}</div>
+  return <div className={`listItem emailRow ${!message.isRead?'emailUnread':''} ${handled?'emailHandled':''}`}>
+    <div className="goalHeader"><strong>{message.subject||'(No subject)'}</strong><span className={`badge emailBadge ${label.toLowerCase().replaceAll(' ','-').replace('&','and')}`}>{label}</span></div>
+    <div className="muted small">{sender} · {received}{message.hasAttachments?' · attachment':''}</div>
     {message.bodyPreview&&<p className="emailPreview">{message.bodyPreview}</p>}
-    {message.webLink&&<a className="btn emailOpen" href={message.webLink} target="_blank" rel="noreferrer">Open in Outlook</a>}
+    <div className="actions emailActions">
+      {!handled&&<button className="btn primary" disabled={busy} onClick={createTask}>{busy?'Working…':'Create task'}</button>}
+      {!handled&&<button className="btn" disabled={busy} onClick={markHandled}>Mark handled</button>}
+      {handled&&<button className="btn" disabled={busy} onClick={reopen}>Reopen</button>}
+      {message.webLink&&<a className="btn emailOpen" href={message.webLink} target="_blank" rel="noreferrer">Open in Outlook</a>}
+    </div>
   </div>;
 }
 
@@ -489,7 +554,7 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,emai
   const smokeFree=recent.filter(e=>e.habits?.['No smoking']).length;
   const exerciseDays=recent.filter(e=>e.habits?.Exercise).length;
   const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
-  const activeGoals=goals.filter(g=>g.status!=='Complete').length;
+  const activeGoals=goals.filter(g=>g.status!=='Complete'&&g.status!=='Inbox task').length;
   const completeGoals=goals.filter(g=>g.status==='Complete').length;
   const greetingHour=new Date().getHours();
   const greeting=greetingHour<12?'Good morning':greetingHour<18?'Good afternoon':'Good evening';
@@ -790,25 +855,28 @@ function Goals({session,goals,reload}:{session:Session,goals:any[],reload:()=>vo
   const add=async()=>{if(!f.title?.trim()){alert('Add a goal or project name first.');return;}const {error}=await supabase.from('goals').insert({...f,user_id:session.user.id});if(error)alert(error.message);else{setF({status:'Not started'});reload()}};
   const del=async(id:string)=>{await supabase.from('goals').delete().eq('id',id);reload()};
   const updateStatus=async(id:string,status:string)=>{await supabase.from('goals').update({status}).eq('id',id);reload()};
-  const complete=goals.filter(g=>g.status==='Complete').length;
+  const projects=goals.filter(g=>g.status!=='Inbox task');
+  const inboxTasks=goals.filter(g=>g.status==='Inbox task');
+  const complete=projects.filter(g=>g.status==='Complete').length;
   const overdue=(deadline:string,status:string)=>deadline&&status!=='Complete'&&new Date(deadline)<new Date(today);
   return <>
     <div className="grid cols4">
-      <Kpi label="Total goals" value={goals.length}/>
-      <Kpi label="In progress" value={goals.filter(g=>g.status==='In progress').length}/>
-      <Kpi label="Waiting" value={goals.filter(g=>g.status==='Waiting').length}/>
-      <Kpi label="Complete" value={complete}/>
+      <Kpi label="Total goals" value={projects.length}/>
+      <Kpi label="In progress" value={projects.filter(g=>g.status==='In progress').length}/>
+      <Kpi label="Waiting" value={projects.filter(g=>g.status==='Waiting').length}/>
+      <Kpi label="Inbox tasks" value={inboxTasks.length}/>
     </div>
     <div className="card" style={{marginTop:18}}>
       <h2>Add a goal or project</h2>
       <div className="grid cols4"><input placeholder="Goal or project" value={f.title||''} onChange={e=>setF({...f,title:e.target.value})}/><input placeholder="Next action" value={f.next_action||''} onChange={e=>setF({...f,next_action:e.target.value})}/><input type="date" value={f.deadline||''} onChange={e=>setF({...f,deadline:e.target.value})}/><select value={f.status} onChange={e=>setF({...f,status:e.target.value})}>{['Not started','In progress','Waiting','Complete'].map(x=><option key={x}>{x}</option>)}</select></div>
       <button className="btn primary" style={{marginTop:10}} onClick={add}>Add goal</button>
     </div>
+    {inboxTasks.length>0&&<div className="card" style={{marginTop:18}}><div className="goalHeader"><h2>Inbox tasks</h2><span className="badge">From Steve Inbox Ops</span></div><div className="list">{inboxTasks.map(g=><div className="listItem" key={g.id}><div className="goalHeader"><strong>{g.title}</strong><span className="badge">Inbox task</span></div><div className="muted small">{g.next_action||'Follow up'} · Due {g.deadline||'Not set'}</div><div className="actions" style={{marginTop:8}}><button className="btn primary" onClick={()=>del(g.id)}>Complete & remove</button></div></div>)}</div></div>}
     <div className="card" style={{marginTop:18}}>
       <h2>Goal progress</h2>
-      <div className="goalProgressNumber">{complete} of {goals.length} complete</div>
-      <div className="progress"><span style={{width:`${goals.length?(complete/goals.length)*100:0}%`}}></span></div>
-      <div className="list" style={{marginTop:18}}>{goals.length?goals.map(g=><div className={`listItem ${overdue(g.deadline,g.status)?'overdue':''}`} key={g.id}>
+      <div className="goalProgressNumber">{complete} of {projects.length} complete</div>
+      <div className="progress"><span style={{width:`${projects.length?(complete/projects.length)*100:0}%`}}></span></div>
+      <div className="list" style={{marginTop:18}}>{projects.length?projects.map(g=><div className={`listItem ${overdue(g.deadline,g.status)?'overdue':''}`} key={g.id}>
         <div className="goalHeader"><strong>{g.title}</strong><span className="badge">{g.status}</span></div>
         <div className="muted small">Next: {g.next_action||'Not set'} · Deadline: {g.deadline||'Not set'} {overdue(g.deadline,g.status)?'· OVERDUE':''}</div>
         <div className="actions" style={{marginTop:8}}>
@@ -817,7 +885,7 @@ function Goals({session,goals,reload}:{session:Session,goals:any[],reload:()=>vo
         </div>
       </div>):<div className="muted">No goals or projects yet.</div>}</div>
     </div>
-  </>
+  </>;
 }
 
 function Vision({session,settings,reload}:{session:Session,settings:any,reload:()=>void}) {
