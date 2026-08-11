@@ -49,7 +49,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Daily','Stevie','Email','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -209,6 +209,7 @@ function BlueprintApp({session}:{session:Session}) {
         <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
       {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} setTab={setTab}/>}
+      {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
@@ -360,6 +361,95 @@ function InsightCard({title,items,empty,tone}:{title:string,items:string[],empty
 }
 
 
+
+
+
+type TodayQueueItem = {
+  id:string;
+  source:'Email'|'Daily'|'Goal'|'Decision'|'Relationship'|'CEO';
+  title:string;
+  detail?:string;
+  bucket:'Now'|'Today'|'This Week'|'Waiting';
+  href?:string;
+  emailId?:string;
+  goalId?:string;
+  actionLabel?:string;
+};
+
+function TomorrowDate(){
+  const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10);
+}
+
+function TodayOps({session,entries,goals,decisionItems,emailSummary,reload,refreshEmail,setTab}:{session:Session,entries:DailyEntry[],goals:any[],decisionItems:DecisionItem[],emailSummary:EmailSummary,reload:()=>void,refreshEmail:()=>void,setTab:(t:string)=>void}){
+  const [busy,setBusy]=useState<string|null>(null);
+  const [view,setView]=useState<'All'|'Now'|'Today'|'This Week'|'Waiting'>('All');
+  const latest=entries.at(-1);
+  const tomorrow=TomorrowDate();
+  const weekEnd=new Date(); weekEnd.setDate(weekEnd.getDate()+7); const weekEndStr=weekEnd.toISOString().slice(0,10);
+  const emailText=(m:OutlookMessage)=>`${m.subject||''} ${m.bodyPreview||''}`.toLowerCase();
+  const emailSender=(m:OutlookMessage)=>(m.from?.emailAddress?.address||'').toLowerCase();
+  const emailRoutine=(m:OutlookMessage)=>emailSender(m).includes('fresho.com')||emailSender(m).includes('no-reply')||emailSender(m).includes('noreply')||/order confirmation|your order has|delivery confirmation|dispatch/.test(emailText(m));
+  const emailFinance=(m:OutlookMessage)=>/invoice|statement|remittance|payment|credit|overdue|price increase|account|direct debit|vat|balance/.test(emailText(m));
+  const emailUrgent=(m:OutlookMessage)=>m.importance==='high'||/urgent|overdue|action required|final notice|credit hold|today|asap|problem|shortage|complaint/.test(emailText(m));
+  const emailHandled=(m:OutlookMessage)=>!!(m as OutlookMessage & {handled?:boolean}).handled;
+  const actionEmails=emailSummary.messages.filter(m=>!emailHandled(m)&&(emailUrgent(m)||emailFinance(m)||(!m.isRead&&!emailRoutine(m))));
+
+  const items:TodayQueueItem[]=[];
+  actionEmails.slice(0,12).forEach(m=>items.push({
+    id:`email-${m.id}`,source:'Email',title:m.subject||'Inbox follow-up',detail:`${m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Email'}${m.bodyPreview?` · ${m.bodyPreview.slice(0,120)}`:''}`,
+    bucket:emailUrgent(m)||emailFinance(m)?'Now':'Today',href:m.webLink,emailId:m.id,actionLabel:'Handle'
+  }));
+  const priorities=[latest?.priority_1,latest?.priority_2,latest?.priority_3].filter(Boolean) as string[];
+  priorities.forEach((x,i)=>items.push({id:`daily-${i}`,source:'Daily',title:x,bucket:i===0?'Now':'Today',detail:'Daily priority'}));
+  if(latest?.opportunity) items.push({id:'ceo-opportunity',source:'CEO',title:latest.opportunity,bucket:'Now',detail:'Biggest opportunity'});
+  if(latest?.avoiding) items.push({id:'ceo-avoiding',source:'CEO',title:latest.avoiding,bucket:'Now',detail:'Decision being avoided'});
+  if(latest?.relationship_promise) items.push({id:'relationship-promise',source:'Relationship',title:latest.relationship_promise,bucket:'Today',detail:'Promise to keep'});
+
+  goals.filter(g=>g.status!=='Complete').forEach(g=>{
+    if(g.status==='Waiting') items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:g.next_action,bucket:'Waiting',goalId:g.id});
+    else if(g.deadline&&g.deadline<today) items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:`Overdue · ${g.next_action||'No next action'}`,bucket:'Now',goalId:g.id});
+    else if(g.deadline===today||g.status==='Inbox task') items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:g.next_action,bucket:'Today',goalId:g.id});
+    else if(g.deadline&&g.deadline<=weekEndStr) items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:`Due ${g.deadline} · ${g.next_action||''}`,bucket:'This Week',goalId:g.id});
+  });
+  decisionItems.filter(d=>d.review_status!=='Reviewed'&&d.review_date&&d.review_date<=today).forEach(d=>items.push({id:`decision-${d.id}`,source:'Decision',title:`Review: ${d.title}`,detail:d.decision_made,bucket:'Now'}));
+
+  const unique=Array.from(new Map(items.map(i=>[i.id,i])).values());
+  const filtered=view==='All'?unique:unique.filter(i=>i.bucket===view);
+  const count=(b:TodayQueueItem['bucket'])=>unique.filter(i=>i.bucket===b).length;
+  const topThree=unique.filter(i=>i.bucket==='Now').slice(0,3);
+  const remaining=unique.filter(i=>i.bucket==='Now'||i.bucket==='Today').length;
+
+  const markEmailHandled=async(emailId:string)=>{
+    setBusy(emailId); const {error}=await supabase.from('email_messages').update({handled:true}).eq('user_id',session.user.id).eq('external_id',emailId); setBusy(null);
+    if(error)alert(error.message);else refreshEmail();
+  };
+  const emailTomorrow=async(item:TodayQueueItem)=>{
+    if(!item.emailId)return; setBusy(item.emailId);
+    const {error}=await supabase.from('goals').insert({user_id:session.user.id,title:item.title,next_action:[item.detail,item.href].filter(Boolean).join(' · '),deadline:tomorrow,status:'Inbox task'});
+    if(!error) await supabase.from('email_messages').update({handled:true}).eq('user_id',session.user.id).eq('external_id',item.emailId);
+    setBusy(null); if(error)alert(error.message);else{await reload();await refreshEmail();}
+  };
+  const completeGoal=async(id:string)=>{setBusy(id);const {error}=await supabase.from('goals').update({status:'Complete'}).eq('id',id);setBusy(null);if(error)alert(error.message);else reload();};
+  const waitGoal=async(id:string)=>{setBusy(id);const {error}=await supabase.from('goals').update({status:'Waiting'}).eq('id',id);setBusy(null);if(error)alert(error.message);else reload();};
+  const tomorrowGoal=async(id:string)=>{setBusy(id);const {error}=await supabase.from('goals').update({deadline:tomorrow,status:'In progress'}).eq('id',id);setBusy(null);if(error)alert(error.message);else reload();};
+
+  return <>
+    <div className="card todayHero">
+      <div><div className="kpiLabel">Steve · Personal Assistant & Operations Manager</div><div className="heroText">Today’s Operations Brief</div><p className="briefSummary">{remaining?`${remaining} things need attention today. ${count('Now')} should be dealt with first.`:'Today is under control. Use the space to protect your priorities rather than create more work.'}</p></div>
+      <div className="todayHeroBadge"><strong>{count('Now')}</strong><span>NOW</span></div>
+    </div>
+    <div className="grid cols4" style={{marginTop:18}}><Kpi label="Now" value={count('Now')}/><Kpi label="Today" value={count('Today')}/><Kpi label="This week" value={count('This Week')}/><Kpi label="Waiting" value={count('Waiting')}/></div>
+    <div className="grid todayTopGrid" style={{marginTop:18}}>
+      <div className="card steveTopThree"><div className="kpiLabel">Steve’s Top 3</div><h2>Do these before the noise</h2><div className="list">{topThree.length?topThree.map((i,n)=><div className="listItem" key={i.id}><span className="todayNumber">{n+1}</span><strong>{i.title}</strong><div className="muted small">{i.source}{i.detail?` · ${i.detail}`:''}</div></div>):<div className="muted">Nothing urgent is competing for your attention.</div>}</div></div>
+      <div className="card"><div className="kpiLabel">Today’s compass</div><h2>Keep the day balanced</h2><div className="list"><div className="listItem"><strong>Mission</strong><br/>{latest?.mission||'Set today’s mission in Daily.'}</div><div className="listItem"><strong>Relationship</strong><br/>{latest?.relationship_action||latest?.relationship_promise||'Choose one meaningful connection action.'}</div><div className="listItem"><strong>Health</strong><br/>{latest?.sleep_hours?`${latest.sleep_hours}h sleep · Energy ${latest.energy||'-'}/10 · Stress ${latest.stress||'-'}/10`:'Complete the morning health check.'}</div></div></div>
+    </div>
+    <div className="card todayBoard" style={{marginTop:18}}>
+      <div className="inboxBriefTop"><div><div className="kpiLabel">Unified action queue</div><h2>One board for the day</h2></div><div className="todayFilters">{(['All','Now','Today','This Week','Waiting'] as const).map(x=><button key={x} className={`emailFilter ${view===x?'active':''}`} onClick={()=>setView(x)}>{x}</button>)}</div></div>
+      <div className="todayQueue">{filtered.length?filtered.map(item=><div className={`todayItem today-${item.bucket.toLowerCase().replace(' ','-')}`} key={item.id}><div className="todayItemMain"><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.bucket}</span></div><div className="muted small">{item.source}{item.detail?` · ${item.detail}`:''}</div></div><div className="actions todayActions">{item.href&&<a className="btn emailOpen" href={item.href} target="_blank" rel="noreferrer">Open</a>}{item.emailId&&<button className="btn primary" disabled={busy===item.emailId} onClick={()=>markEmailHandled(item.emailId!)}>Done</button>}{item.emailId&&<button className="btn" disabled={busy===item.emailId} onClick={()=>emailTomorrow(item)}>Tomorrow</button>}{item.goalId&&<button className="btn primary" disabled={busy===item.goalId} onClick={()=>completeGoal(item.goalId!)}>Done</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>tomorrowGoal(item.goalId!)}>Tomorrow</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>waitGoal(item.goalId!)}>Waiting</button>}{!item.emailId&&!item.goalId&&<button className="btn" onClick={()=>setTab(item.source==='Decision'?'Decisions':item.source==='CEO'?'CEO':'Daily')}>Open source</button>}</div></div>):<div className="todayEmpty"><strong>Nothing in this bucket.</strong><span>That is a good thing.</span></div>}</div>
+    </div>
+    <div className="card endDayCard" style={{marginTop:18}}><div><div className="kpiLabel">End of day · 2 minutes</div><h2>Close the loop before tomorrow</h2><p className="muted">{remaining?`${remaining} Now/Today items are still open. Decide what gets finished, moved or consciously left.`:'You have cleared the active queue. Capture the win and set tomorrow up.'}</p></div><div className="endDayGrid"><div className="listItem"><strong>Wins</strong><br/>{latest?.wins||'Not recorded yet.'}</div><div className="listItem"><strong>Lesson</strong><br/>{latest?.lesson||'Not recorded yet.'}</div><div className="listItem"><strong>Tomorrow’s mission</strong><br/>{latest?.tomorrow_mission||'Not set yet.'}</div></div><button className="btn primary" onClick={()=>setTab('Daily')}>Complete Evening Review</button></div>
+  </>;
+}
 
 function EmailCentre({session,summary,refresh,goals,reload}:{session:Session,summary:EmailSummary,refresh:()=>void,goals:any[],reload:()=>void}) {
   const [filter,setFilter]=useState<'Needs Action'|'Orders'|'Supplier & Finance'|'Routine'|'Handled'>('Needs Action');
@@ -585,7 +675,8 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,emai
         <div className="kpiLabel">{greeting}, James</div>
         <div className="heroText">{latest?.mission||'Set today’s mission and decide what matters most.'}</div>
         <div className="actions" style={{marginTop:14}}>
-          <button className="btn primary" onClick={()=>setTab('Daily')}>Open Daily Command Centre</button>
+          <button className="btn primary" onClick={()=>setTab('Today')}>Open Today Board</button>
+          <button className="btn" onClick={()=>setTab('Daily')}>Daily Command Centre</button>
           <button className="btn" onClick={()=>setTab('Stevie')}>Read Steve’s Brief</button>
         </div>
       </div>
@@ -595,6 +686,11 @@ function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,emai
     <div className="grid scoreGrid">
       <div className="card blueprintScoreCard"><div className="scoreRing" style={{'--score':`${blueprint.score}%`} as React.CSSProperties}><div><strong>{blueprint.score}</strong><span>/100</span></div></div><div><div className="kpiLabel">Blueprint Score</div><h2>{blueprint.score>=80?'Strong balance':blueprint.score>=60?'Moving forward':'Needs attention'}</h2><p className="muted">A weighted seven-day view of health, relationships, CEO focus, growth, recovery and reflection.</p></div></div>
       <div className="card"><h2>Score breakdown</h2><div className="scoreBreakdown">{blueprint.components.map(c=><div key={c.label}><div className="goalHeader"><strong>{c.label}</strong><span>{c.score.toFixed(1)}/10</span></div><div className="progress"><span style={{width:`${Math.min(100,c.score*10)}%`}}></span></div></div>)}</div></div>
+    </div>
+
+    <div className="card todayLaunchCard">
+      <div><div className="kpiLabel">Steve Daily Ops</div><h2>One queue for everything that matters today</h2><p className="muted">Email actions, CEO focus, Daily priorities, goal deadlines and relationship commitments in one place.</p></div>
+      <button className="btn primary" onClick={()=>setTab('Today')}>Open Today Board</button>
     </div>
 
     <div className="card inboxBriefCard">

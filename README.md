@@ -151,3 +151,6 @@ Adds the Outlook Email Focus module and Steve's Inbox Brief. Follow `MICROSOFT_E
 
 ## Version 5.3 — Steve Inbox Ops
 The Email centre now triages live Outlook mail into action, orders, supplier/finance and routine buckets. Message handled state is synced to Supabase, and emails can be converted into Inbox Tasks using the existing Goals table.
+
+## Version 5.4 — Steve Daily Ops
+Version 5.4 adds a unified Today board. It combines actionable Outlook email, Daily priorities, CEO focus, goal deadlines, decision reviews and relationship commitments into one operational queue with Now / Today / This Week / Waiting buckets. No new database migration is required from a working 5.3 install.
