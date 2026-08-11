@@ -212,7 +212,7 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
-      {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} setTab={setTab}/>}
+      {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} emailSummary={emailSummary} setTab={setTab}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
       {tab==='Decisions'&&<DecisionJournal session={session} items={decisionItems} reload={loadAll}/>}
@@ -296,11 +296,24 @@ function buildStevieBrief(entries:DailyEntry[],goals:any[],leads:any[]):StevieBr
   return {headline,summary,action,observations,wins,cautions};
 }
 
-function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],business:any,setTab:(t:string)=>void}) {
+function StevieCentre({entries,goals,leads,business,emailSummary,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],business:any,emailSummary:EmailSummary,setTab:(t:string)=>void}) {
   const brief=buildStevieBrief(entries,goals,leads);
   const latest=entries.at(-1);
   const last7=entries.slice(-7);
   const avg=(key:keyof DailyEntry)=>numericAverage(last7.map(e=>e[key] as number));
+  const inboxRanked=emailSummary.messages
+    .filter(m=>!(m as OutlookMessage & {handled?:boolean}).handled)
+    .map(m=>({message:m,insight:getEmailInsight(m)}))
+    .filter(x=>x.insight.score>=35)
+    .sort((a,b)=>b.insight.score-a.insight.score);
+  const inboxNext=inboxRanked[0];
+  const operationalNext=inboxNext
+    ? `${inboxNext.message.subject||'Inbox item'} — ${inboxNext.insight.reason}`
+    : latest?.avoiding
+      ? `${latest.avoiding} — an avoided decision keeps creating background pressure.`
+      : latest?.priority_1
+        ? `${latest.priority_1} — it is your first recorded priority.`
+        : brief.action;
   return <>
     <div className="card stevieMain stevieConversation">
       <div className="stevieMark">S</div>
@@ -308,9 +321,10 @@ function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[
         <div className="kpiLabel">Steve’s Daily Ops Brief</div>
         <h1 className="briefHeadline">{brief.headline}</h1>
         <p className="briefSummary">{brief.summary}</p>
-        <div className="coachCallout"><strong>Best next action:</strong><br/>{brief.action}</div>
+        <div className="coachCallout"><strong>What should I do next?</strong><br/>{operationalNext}</div>
         <div className="actions" style={{marginTop:14}}>
-          <button className="btn primary" onClick={()=>setTab('Daily')}>Update today’s record</button>
+          <button className="btn primary" onClick={()=>setTab('Today')}>Open Today board</button>
+          <button className="btn" onClick={()=>setTab('Email')}>Open Inbox Ops</button>
           <button className="btn" onClick={()=>setTab('CEO')}>Open CEO focus</button>
         </div>
       </div>
@@ -349,9 +363,18 @@ function StevieCentre({entries,goals,leads,business,setTab}:{entries:DailyEntry[
       </div>
     </div>
 
+    <div className="card intelligencePanel" style={{marginTop:18}}>
+      <div className="goalHeader"><div><div className="kpiLabel">Steve Intelligence</div><h2>Operational signals</h2></div><span className="badge">{emailSummary.connected?`${inboxRanked.length} inbox signals`:'Outlook offline'}</span></div>
+      <div className="grid cols3">
+        <div className="listItem"><strong>Inbox</strong><br/><span className="muted small">{emailSummary.connected?`${emailSummary.action} messages need attention. ${emailSummary.routineOrders} routine/order messages can stay out of your way.`:'Connect Outlook to include inbox intelligence.'}</span></div>
+        <div className="listItem"><strong>CEO</strong><br/><span className="muted small">{latest?.avoiding?`Avoided decision: ${latest.avoiding}`:latest?.opportunity?`Opportunity: ${latest.opportunity}`:'No CEO warning recorded today.'}</span></div>
+        <div className="listItem"><strong>Balance</strong><br/><span className="muted small">{avg('stress')>=7?'Stress is running high — keep the active queue tight.':avg('sleep_hours')>0&&avg('sleep_hours')<6?'Sleep is low — protect energy and avoid unnecessary work.':'No major wellbeing constraint detected from the last seven records.'}</span></div>
+      </div>
+    </div>
+
     <div className="card" style={{marginTop:18}}>
       <h2>How Steve works</h2>
-      <p className="muted">This briefing currently uses transparent rules based on your own saved sleep, energy, mood, stress, habits, relationship actions, goals and CEO entries. It does not send personal data to an external AI service.</p>
+      <p className="muted">Steve Intelligence combines transparent scoring across your saved sleep, energy, mood, stress, goals, CEO entries and live Outlook metadata. Email recommendations explain why an item was prioritised. Draft replies are suggestions only and stay under your control.</p>
     </div>
   </>
 }
@@ -362,6 +385,50 @@ function InsightCard({title,items,empty,tone}:{title:string,items:string[],empty
 
 
 
+
+
+type EmailInsight = {
+  score:number;
+  category:'Needs Action'|'Order'|'Supplier & Finance'|'Routine'|'FYI';
+  reason:string;
+  suggestedAction:string;
+};
+
+function getEmailInsight(m:OutlookMessage):EmailInsight {
+  const subject=(m.subject||'').toLowerCase();
+  const preview=(m.bodyPreview||'').toLowerCase();
+  const body=`${subject} ${preview}`;
+  const sender=(m.from?.emailAddress?.address||'').toLowerCase();
+  const routine=sender.includes('fresho.com')||sender.includes('no-reply')||sender.includes('noreply')||/order confirmation|your order has|delivery confirmation|dispatch/.test(body);
+  const order=/\border\b|purchase order|po number|new order|order request|quantity|quantities|delivery for/.test(body);
+  const finance=/invoice|statement|remittance|payment|credit|overdue|price increase|account|direct debit|vat|balance/.test(body);
+  const urgent=m.importance==='high'||/urgent|overdue|action required|final notice|credit hold|today|asap|problem|shortage|complaint|failed|missing/.test(body);
+  const asksReply=/please (reply|confirm|advise|let me know)|can you|could you|would you|need you to|response required|confirm/.test(body);
+  let score=0;
+  if(!m.isRead) score+=18;
+  if(urgent) score+=45;
+  if(finance) score+=28;
+  if(asksReply) score+=24;
+  if(m.hasAttachments) score+=5;
+  if(order) score+=8;
+  if(routine) score-=35;
+  score=Math.max(0,Math.min(100,score));
+  if(routine && !urgent && !finance) return {score,category:'Routine',reason:'Routine automated/order traffic; keep it out of the main action queue.',suggestedAction:'Review only if the order needs an operational check.'};
+  if(finance) return {score:Math.max(score,55),category:'Supplier & Finance',reason:urgent?'Finance/admin message with urgency language.':'Finance/admin message that may affect cash, credit, pricing or payment.',suggestedAction:'Review the amount/status and decide whether a reply, payment or follow-up is required.'};
+  if(urgent || asksReply) return {score:Math.max(score,60),category:'Needs Action',reason:urgent?'Contains urgency/problem language and deserves a quick decision.':'Looks like the sender is asking for a response or confirmation.',suggestedAction:'Open it, decide the response, and either reply or create a follow-up task.'};
+  if(order) return {score,category:'Order',reason:'Looks order-related but not currently showing a strong exception signal.',suggestedAction:'Check only if the order needs confirmation, amendment or an operational action.'};
+  if(!m.isRead) return {score:Math.max(score,35),category:'Needs Action',reason:'Unread non-routine message; worth a quick triage before it gets buried.',suggestedAction:'Scan it and either handle, task or mark as FYI.'};
+  return {score,category:'FYI',reason:'No strong urgency, finance or response signal detected.',suggestedAction:'Leave it unless it supports an active task or decision.'};
+}
+
+function draftReplyFor(m:OutlookMessage){
+  const sender=m.from?.emailAddress?.name||'there';
+  const insight=getEmailInsight(m);
+  if(insight.category==='Supplier & Finance') return `Hi ${sender},\n\nThanks for your email. I’ve received this and I’m checking the details now. I’ll come back to you shortly once I’ve confirmed the position.\n\nRegards,\nJames`;
+  if(insight.category==='Order') return `Hi ${sender},\n\nThanks for the order. I’ve received it and will check everything through. I’ll let you know if there are any issues or changes needed.\n\nRegards,\nJames`;
+  if(/complaint|problem|shortage|missing/i.test(`${m.subject||''} ${m.bodyPreview||''}`)) return `Hi ${sender},\n\nThanks for letting me know. I’m looking into this now and I’ll come back to you as soon as I’ve got a clear answer for you.\n\nRegards,\nJames`;
+  return `Hi ${sender},\n\nThanks for your email. I’ve picked this up and I’ll come back to you shortly.\n\nRegards,\nJames`;
+}
 
 
 type TodayQueueItem = {
@@ -392,12 +459,16 @@ function TodayOps({session,entries,goals,decisionItems,emailSummary,reload,refre
   const emailFinance=(m:OutlookMessage)=>/invoice|statement|remittance|payment|credit|overdue|price increase|account|direct debit|vat|balance/.test(emailText(m));
   const emailUrgent=(m:OutlookMessage)=>m.importance==='high'||/urgent|overdue|action required|final notice|credit hold|today|asap|problem|shortage|complaint/.test(emailText(m));
   const emailHandled=(m:OutlookMessage)=>!!(m as OutlookMessage & {handled?:boolean}).handled;
-  const actionEmails=emailSummary.messages.filter(m=>!emailHandled(m)&&(emailUrgent(m)||emailFinance(m)||(!m.isRead&&!emailRoutine(m))));
+  const actionEmails=emailSummary.messages
+    .filter(m=>!emailHandled(m))
+    .map(m=>({message:m,insight:getEmailInsight(m)}))
+    .filter(x=>x.insight.score>=35&&x.insight.category!=='Routine')
+    .sort((a,b)=>b.insight.score-a.insight.score);
 
   const items:TodayQueueItem[]=[];
-  actionEmails.slice(0,12).forEach(m=>items.push({
-    id:`email-${m.id}`,source:'Email',title:m.subject||'Inbox follow-up',detail:`${m.from?.emailAddress?.name||m.from?.emailAddress?.address||'Email'}${m.bodyPreview?` · ${m.bodyPreview.slice(0,120)}`:''}`,
-    bucket:emailUrgent(m)||emailFinance(m)?'Now':'Today',href:m.webLink,emailId:m.id,actionLabel:'Handle'
+  actionEmails.slice(0,12).forEach(({message:m,insight})=>items.push({
+    id:`email-${m.id}`,source:'Email',title:m.subject||'Inbox follow-up',detail:`Steve: ${insight.reason} · ${insight.suggestedAction}`,
+    bucket:insight.score>=60?'Now':'Today',href:m.webLink,emailId:m.id,actionLabel:'Handle'
   }));
   const priorities=[latest?.priority_1,latest?.priority_2,latest?.priority_3].filter(Boolean) as string[];
   priorities.forEach((x,i)=>items.push({id:`daily-${i}`,source:'Daily',title:x,bucket:i===0?'Now':'Today',detail:'Daily priority'}));
@@ -443,6 +514,18 @@ function TodayOps({session,entries,goals,decisionItems,emailSummary,reload,refre
       <div className="card steveTopThree"><div className="kpiLabel">Steve’s Top 3</div><h2>Do these before the noise</h2><div className="list">{topThree.length?topThree.map((i,n)=><div className="listItem" key={i.id}><span className="todayNumber">{n+1}</span><strong>{i.title}</strong><div className="muted small">{i.source}{i.detail?` · ${i.detail}`:''}</div></div>):<div className="muted">Nothing urgent is competing for your attention.</div>}</div></div>
       <div className="card"><div className="kpiLabel">Today’s compass</div><h2>Keep the day balanced</h2><div className="list"><div className="listItem"><strong>Mission</strong><br/>{latest?.mission||'Set today’s mission in Daily.'}</div><div className="listItem"><strong>Relationship</strong><br/>{latest?.relationship_action||latest?.relationship_promise||'Choose one meaningful connection action.'}</div><div className="listItem"><strong>Health</strong><br/>{latest?.sleep_hours?`${latest.sleep_hours}h sleep · Energy ${latest.energy||'-'}/10 · Stress ${latest.stress||'-'}/10`:'Complete the morning health check.'}</div></div></div>
     </div>
+    <div className="card nextActionCard" style={{marginTop:18}}>
+      <div className="stevieMark">S</div>
+      <div>
+        <div className="kpiLabel">What should I do next?</div>
+        <h2>{topThree[0]?.title||'Protect the space you have created.'}</h2>
+        <p className="muted">{topThree[0]?.detail||'There is nothing critical in the Now queue. Work deliberately on the mission rather than filling the gap with low-value admin.'}</p>
+        <div className="actions">
+          {topThree[0]?.href&&<a className="btn primary emailOpen" href={topThree[0].href} target="_blank" rel="noreferrer">Open it now</a>}
+          {!topThree[0]?.href&&topThree[0]&&<button className="btn primary" onClick={()=>setTab(topThree[0].source==='Decision'?'Decisions':topThree[0].source==='CEO'?'CEO':topThree[0].source==='Email'?'Email':'Daily')}>Open source</button>}
+        </div>
+      </div>
+    </div>
     <div className="card todayBoard" style={{marginTop:18}}>
       <div className="inboxBriefTop"><div><div className="kpiLabel">Unified action queue</div><h2>One board for the day</h2></div><div className="todayFilters">{(['All','Now','Today','This Week','Waiting'] as const).map(x=><button key={x} className={`emailFilter ${view===x?'active':''}`} onClick={()=>setView(x)}>{x}</button>)}</div></div>
       <div className="todayQueue">{filtered.length?filtered.map(item=><div className={`todayItem today-${item.bucket.toLowerCase().replace(' ','-')}`} key={item.id}><div className="todayItemMain"><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.bucket}</span></div><div className="muted small">{item.source}{item.detail?` · ${item.detail}`:''}</div></div><div className="actions todayActions">{item.href&&<a className="btn emailOpen" href={item.href} target="_blank" rel="noreferrer">Open</a>}{item.emailId&&<button className="btn primary" disabled={busy===item.emailId} onClick={()=>markEmailHandled(item.emailId!)}>Done</button>}{item.emailId&&<button className="btn" disabled={busy===item.emailId} onClick={()=>emailTomorrow(item)}>Tomorrow</button>}{item.goalId&&<button className="btn primary" disabled={busy===item.goalId} onClick={()=>completeGoal(item.goalId!)}>Done</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>tomorrowGoal(item.goalId!)}>Tomorrow</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>waitGoal(item.goalId!)}>Waiting</button>}{!item.emailId&&!item.goalId&&<button className="btn" onClick={()=>setTab(item.source==='Decision'?'Decisions':item.source==='CEO'?'CEO':'Daily')}>Open source</button>}</div></div>):<div className="todayEmpty"><strong>Nothing in this bucket.</strong><span>That is a good thing.</span></div>}</div>
@@ -462,19 +545,25 @@ function EmailCentre({session,summary,refresh,goals,reload}:{session:Session,sum
   const isUrgent=(m:OutlookMessage)=>m.importance==='high'||/urgent|overdue|action required|final notice|credit hold|today|asap|problem|shortage|complaint/.test(text(m));
   const isHandled=(m:OutlookMessage)=>!!(m as OutlookMessage & {handled?:boolean}).handled;
   const needsAction=(m:OutlookMessage)=>!isHandled(m)&&(isUrgent(m)||isFinance(m)||(!m.isRead&&!isRoutine(m)));
-  const primaryLabel=(m:OutlookMessage)=>isHandled(m)?'Handled':isFinance(m)?'Supplier & Finance':isOrder(m)?'Order':isRoutine(m)?'Routine':isUrgent(m)?'Needs Action':!m.isRead?'Unread':'FYI';
+  const primaryLabel=(m:OutlookMessage)=>isHandled(m)?'Handled':getEmailInsight(m).category;
   const filtered=summary.messages.filter(m=>{
     if(filter==='Handled')return isHandled(m);
-    if(filter==='Needs Action')return needsAction(m);
+    if(filter==='Needs Action')return !isHandled(m)&&getEmailInsight(m).score>=35&&getEmailInsight(m).category!=='Routine';
     if(filter==='Orders')return !isHandled(m)&&(isOrder(m)||isRoutine(m));
     if(filter==='Supplier & Finance')return !isHandled(m)&&isFinance(m);
     return !isHandled(m)&&isRoutine(m);
   });
+  const rankedFiltered=[...filtered].sort((a,b)=>getEmailInsight(b).score-getEmailInsight(a).score);
   const financeCount=summary.messages.filter(m=>!isHandled(m)&&isFinance(m)).length;
   const orderCount=summary.messages.filter(m=>!isHandled(m)&&(isOrder(m)||isRoutine(m))).length;
   const inboxTasks=goals.filter(g=>g.status==='Inbox task');
-  const brief=summary.action
-    ? `${summary.action} message${summary.action===1?'':'s'} need your attention. ${orderCount} look order-related and ${financeCount} are supplier/finance.`
+  const nextEmail=summary.messages
+    .filter(m=>!isHandled(m))
+    .map(m=>({message:m,insight:getEmailInsight(m)}))
+    .filter(x=>x.insight.score>=35&&x.insight.category!=='Routine')
+    .sort((a,b)=>b.insight.score-a.insight.score)[0];
+  const brief=nextEmail
+    ? `${summary.action} message${summary.action===1?'':'s'} need attention. Start with “${nextEmail.message.subject||'the top message'}” because ${nextEmail.insight.reason.toLowerCase()}`
     : `Inbox is under control. ${orderCount} order-related message${orderCount===1?'':'s'} are in the current view.`;
 
   const markHandled=async(m:OutlookMessage)=>{
@@ -525,7 +614,7 @@ function EmailCentre({session,summary,refresh,goals,reload}:{session:Session,sum
     <div className="grid emailOpsGrid" style={{marginTop:18}}>
       <div className="card">
         <div className="goalHeader"><h2>{filter}</h2><span className="badge">{filtered.length}</span></div>
-        <div className="list">{filtered.length?filtered.slice(0,30).map(m=><EmailRow key={m.id} message={m} label={primaryLabel(m)} busy={busy===m.id} handled={isHandled(m)} createTask={()=>createTask(m)} markHandled={()=>markHandled(m)} reopen={()=>reopen(m)}/>):<div className="muted">Nothing in this bucket right now.</div>}</div>
+        <div className="list">{rankedFiltered.length?rankedFiltered.slice(0,30).map(m=><EmailRow key={m.id} message={m} label={primaryLabel(m)} insight={getEmailInsight(m)} busy={busy===m.id} handled={isHandled(m)} createTask={()=>createTask(m)} markHandled={()=>markHandled(m)} reopen={()=>reopen(m)}/>):<div className="muted">Nothing in this bucket right now.</div>}</div>
       </div>
       <div className="card inboxTaskCard">
         <div className="kpiLabel">Action board</div><h2>Tasks created from email</h2>
@@ -535,15 +624,21 @@ function EmailCentre({session,summary,refresh,goals,reload}:{session:Session,sum
   </>;
 }
 
-function EmailRow({message,label,busy,handled,createTask,markHandled,reopen}:{message:OutlookMessage,label:string,busy:boolean,handled:boolean,createTask:()=>void,markHandled:()=>void,reopen:()=>void}) {
+function EmailRow({message,label,insight,busy,handled,createTask,markHandled,reopen}:{message:OutlookMessage,label:string,insight:EmailInsight,busy:boolean,handled:boolean,createTask:()=>void|Promise<void>,markHandled:()=>void|Promise<void>,reopen:()=>void|Promise<void>}) {
   const sender=message.from?.emailAddress?.name||message.from?.emailAddress?.address||'Unknown sender';
   const received=message.receivedDateTime?new Date(message.receivedDateTime).toLocaleString('en-GB',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+  const [showDraft,setShowDraft]=useState(false);
+  const [draft,setDraft]=useState(()=>draftReplyFor(message));
+  const copyDraft=async()=>{try{await navigator.clipboard.writeText(draft);alert('Draft copied. Open Outlook, paste it and edit before sending.');}catch{alert('Could not copy automatically. Select the draft text and copy it manually.');}};
   return <div className={`listItem emailRow ${!message.isRead?'emailUnread':''} ${handled?'emailHandled':''}`}>
     <div className="goalHeader"><strong>{message.subject||'(No subject)'}</strong><span className={`badge emailBadge ${label.toLowerCase().replaceAll(' ','-').replace('&','and')}`}>{label}</span></div>
-    <div className="muted small">{sender} · {received}{message.hasAttachments?' · attachment':''}</div>
+    <div className="muted small">{sender} · {received}{message.hasAttachments?' · attachment':''} · Steve score {insight.score}/100</div>
     {message.bodyPreview&&<p className="emailPreview">{message.bodyPreview}</p>}
+    {!handled&&<div className="emailWhy"><strong>Why this matters</strong><span>{insight.reason}</span><strong>Suggested action</strong><span>{insight.suggestedAction}</span></div>}
+    {showDraft&&<div className="draftReplyBox"><div className="goalHeader"><strong>Steve draft</strong><span className="badge">Review before sending</span></div><textarea value={draft} onChange={e=>setDraft(e.target.value)}/><div className="actions"><button className="btn primary" onClick={copyDraft}>Copy draft</button>{message.webLink&&<a className="btn emailOpen" href={message.webLink} target="_blank" rel="noreferrer">Open Outlook</a>}<button className="btn" onClick={()=>setShowDraft(false)}>Close</button></div></div>}
     <div className="actions emailActions">
       {!handled&&<button className="btn primary" disabled={busy} onClick={createTask}>{busy?'Working…':'Create task'}</button>}
+      {!handled&&<button className="btn" onClick={()=>setShowDraft(v=>!v)}>Draft reply</button>}
       {!handled&&<button className="btn" disabled={busy} onClick={markHandled}>Mark handled</button>}
       {handled&&<button className="btn" disabled={busy} onClick={reopen}>Reopen</button>}
       {message.webLink&&<a className="btn emailOpen" href={message.webLink} target="_blank" rel="noreferrer">Open in Outlook</a>}

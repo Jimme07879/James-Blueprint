@@ -154,3 +154,10 @@ The Email centre now triages live Outlook mail into action, orders, supplier/fin
 
 ## Version 5.4 — Steve Daily Ops
 Version 5.4 adds a unified Today board. It combines actionable Outlook email, Daily priorities, CEO focus, goal deadlines, decision reviews and relationship commitments into one operational queue with Now / Today / This Week / Waiting buckets. No new database migration is required from a working 5.3 install.
+
+## Version 5.5 — Steve Intelligence
+- Transparent email priority scoring and reasoning
+- “What should I do next?” operational recommendation
+- Smarter morning brief using Outlook + Today + CEO signals
+- Draft reply suggestions with copy-to-Outlook workflow
+- No new SQL or environment variables required

@@ -235,3 +235,14 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
   }
   .sidebar .nav{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 }
+
+/* Blueprint OS 5.5 — Steve Intelligence */
+.intelligencePanel{background:radial-gradient(circle at 100% 0,rgba(86,125,190,.16),transparent 38%),linear-gradient(135deg,var(--panel),var(--panel-solid))}
+.nextActionCard{display:grid;grid-template-columns:64px 1fr;gap:18px;align-items:start;background:radial-gradient(circle at 100% 0,rgba(112,151,214,.18),transparent 36%),linear-gradient(135deg,var(--panel),var(--panel-solid));border:1px solid var(--line)}
+.nextActionCard h2{font-size:24px;margin:5px 0 8px}
+.emailWhy{display:grid;grid-template-columns:max-content 1fr;gap:5px 12px;padding:12px 14px;border-radius:14px;background:var(--soft);margin:10px 0;font-size:12px;line-height:1.45}
+.emailWhy strong{color:var(--ink)}.emailWhy span{color:var(--muted)}
+.draftReplyBox{margin:12px 0;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--panel-solid)}
+.draftReplyBox textarea{min-height:170px;font-family:inherit;line-height:1.55}
+.theme-dark .emailWhy{background:#232d3b}
+@media(max-width:700px){.nextActionCard{grid-template-columns:1fr}.emailWhy{grid-template-columns:1fr}.draftReplyBox .actions .btn,.draftReplyBox .actions .emailOpen{width:100%;text-align:center}}
