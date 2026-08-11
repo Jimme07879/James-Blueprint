@@ -246,3 +246,20 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
 .draftReplyBox textarea{min-height:170px;font-family:inherit;line-height:1.55}
 .theme-dark .emailWhy{background:#232d3b}
 @media(max-width:700px){.nextActionCard{grid-template-columns:1fr}.emailWhy{grid-template-columns:1fr}.draftReplyBox .actions .btn,.draftReplyBox .actions .emailOpen{width:100%;text-align:center}}
+
+
+/* Blueprint OS 5.6 — Sales Command Centre */
+.salesHero{display:flex;align-items:center;justify-content:space-between;gap:20px;background:linear-gradient(135deg,var(--panel),var(--panel-2));border-top:3px solid var(--accent)}
+.salesFocusGrid{grid-template-columns:1.15fr .85fr}
+.salesPipelineGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:16px}
+.salesLeadCard{border:1px solid var(--line);border-radius:18px;padding:16px;background:var(--panel-2);box-shadow:0 6px 20px rgba(20,25,35,.04)}
+.salesLeadCard.salesDue{border-color:#c88a34;box-shadow:0 0 0 1px rgba(200,138,52,.12)}
+.salesValueRow{display:flex;justify-content:space-between;align-items:center;margin:14px 0;font-size:13px;color:var(--muted)}
+.salesValueRow strong{font-size:20px;color:var(--ink)}
+.salesNext{margin-bottom:10px}
+.salesMeta{margin:7px 0}
+.salesEmailLink{display:grid;gap:6px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);padding:10px 0;margin:12px 0}
+.salesEmailLink a{font-weight:800;font-size:12px;color:var(--ink)}
+.salesEditGrid{gap:10px}
+.theme-dark .salesLeadCard{background:rgba(255,255,255,.035)}
+@media(max-width:900px){.salesHero{align-items:flex-start;flex-direction:column}.salesFocusGrid,.salesPipelineGrid{grid-template-columns:1fr}.salesLeadCard{padding:14px}}

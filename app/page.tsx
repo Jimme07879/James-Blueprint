@@ -49,7 +49,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Today','Daily','Stevie','Email','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -209,9 +209,10 @@ function BlueprintApp({session}:{session:Session}) {
         <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
       {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} setTab={setTab}/>}
-      {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
+      {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} leads={leads} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
+      {tab==='Sales'&&<SalesCommandCentre session={session} leads={leads} emailSummary={emailSummary} reload={loadAll} setTab={setTab}/>}
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} emailSummary={emailSummary} setTab={setTab}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
@@ -433,7 +434,7 @@ function draftReplyFor(m:OutlookMessage){
 
 type TodayQueueItem = {
   id:string;
-  source:'Email'|'Daily'|'Goal'|'Decision'|'Relationship'|'CEO';
+  source:'Email'|'Daily'|'Goal'|'Decision'|'Relationship'|'CEO'|'Sales';
   title:string;
   detail?:string;
   bucket:'Now'|'Today'|'This Week'|'Waiting';
@@ -447,7 +448,7 @@ function TomorrowDate(){
   const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10);
 }
 
-function TodayOps({session,entries,goals,decisionItems,emailSummary,reload,refreshEmail,setTab}:{session:Session,entries:DailyEntry[],goals:any[],decisionItems:DecisionItem[],emailSummary:EmailSummary,reload:()=>void,refreshEmail:()=>void,setTab:(t:string)=>void}){
+function TodayOps({session,entries,goals,leads,decisionItems,emailSummary,reload,refreshEmail,setTab}:{session:Session,entries:DailyEntry[],goals:any[],leads:any[],decisionItems:DecisionItem[],emailSummary:EmailSummary,reload:()=>void,refreshEmail:()=>void,setTab:(t:string)=>void}){
   const [busy,setBusy]=useState<string|null>(null);
   const [view,setView]=useState<'All'|'Now'|'Today'|'This Week'|'Waiting'>('All');
   const latest=entries.at(-1);
@@ -481,6 +482,11 @@ function TodayOps({session,entries,goals,decisionItems,emailSummary,reload,refre
     else if(g.deadline&&g.deadline<today) items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:`Overdue · ${g.next_action||'No next action'}`,bucket:'Now',goalId:g.id});
     else if(g.deadline===today||g.status==='Inbox task') items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:g.next_action,bucket:'Today',goalId:g.id});
     else if(g.deadline&&g.deadline<=weekEndStr) items.push({id:`goal-${g.id}`,source:'Goal',title:g.title,detail:`Due ${g.deadline} · ${g.next_action||''}`,bucket:'This Week',goalId:g.id});
+  });
+  leads.filter(l=>!['Customer','Won','Lost'].includes(l.stage||'')&&l.follow_up_date).forEach(l=>{
+    const due=l.follow_up_date<=today;
+    const soon=l.follow_up_date>today&&l.follow_up_date<=weekEndStr;
+    if(due||soon) items.push({id:`sales-${l.id}`,source:'Sales',title:`Follow up: ${l.name}`,detail:l.next_action||'Make contact and agree the next step',bucket:due?'Today':'This Week'});
   });
   decisionItems.filter(d=>d.review_status!=='Reviewed'&&d.review_date&&d.review_date<=today).forEach(d=>items.push({id:`decision-${d.id}`,source:'Decision',title:`Review: ${d.title}`,detail:d.decision_made,bucket:'Now'}));
 
@@ -522,13 +528,13 @@ function TodayOps({session,entries,goals,decisionItems,emailSummary,reload,refre
         <p className="muted">{topThree[0]?.detail||'There is nothing critical in the Now queue. Work deliberately on the mission rather than filling the gap with low-value admin.'}</p>
         <div className="actions">
           {topThree[0]?.href&&<a className="btn primary emailOpen" href={topThree[0].href} target="_blank" rel="noreferrer">Open it now</a>}
-          {!topThree[0]?.href&&topThree[0]&&<button className="btn primary" onClick={()=>setTab(topThree[0].source==='Decision'?'Decisions':topThree[0].source==='CEO'?'CEO':topThree[0].source==='Email'?'Email':'Daily')}>Open source</button>}
+          {!topThree[0]?.href&&topThree[0]&&<button className="btn primary" onClick={()=>setTab(topThree[0].source==='Decision'?'Decisions':topThree[0].source==='CEO'?'CEO':topThree[0].source==='Email'?'Email':topThree[0].source==='Sales'?'Sales':'Daily')}>Open source</button>}
         </div>
       </div>
     </div>
     <div className="card todayBoard" style={{marginTop:18}}>
       <div className="inboxBriefTop"><div><div className="kpiLabel">Unified action queue</div><h2>One board for the day</h2></div><div className="todayFilters">{(['All','Now','Today','This Week','Waiting'] as const).map(x=><button key={x} className={`emailFilter ${view===x?'active':''}`} onClick={()=>setView(x)}>{x}</button>)}</div></div>
-      <div className="todayQueue">{filtered.length?filtered.map(item=><div className={`todayItem today-${item.bucket.toLowerCase().replace(' ','-')}`} key={item.id}><div className="todayItemMain"><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.bucket}</span></div><div className="muted small">{item.source}{item.detail?` · ${item.detail}`:''}</div></div><div className="actions todayActions">{item.href&&<a className="btn emailOpen" href={item.href} target="_blank" rel="noreferrer">Open</a>}{item.emailId&&<button className="btn primary" disabled={busy===item.emailId} onClick={()=>markEmailHandled(item.emailId!)}>Done</button>}{item.emailId&&<button className="btn" disabled={busy===item.emailId} onClick={()=>emailTomorrow(item)}>Tomorrow</button>}{item.goalId&&<button className="btn primary" disabled={busy===item.goalId} onClick={()=>completeGoal(item.goalId!)}>Done</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>tomorrowGoal(item.goalId!)}>Tomorrow</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>waitGoal(item.goalId!)}>Waiting</button>}{!item.emailId&&!item.goalId&&<button className="btn" onClick={()=>setTab(item.source==='Decision'?'Decisions':item.source==='CEO'?'CEO':'Daily')}>Open source</button>}</div></div>):<div className="todayEmpty"><strong>Nothing in this bucket.</strong><span>That is a good thing.</span></div>}</div>
+      <div className="todayQueue">{filtered.length?filtered.map(item=><div className={`todayItem today-${item.bucket.toLowerCase().replace(' ','-')}`} key={item.id}><div className="todayItemMain"><div className="goalHeader"><strong>{item.title}</strong><span className="badge">{item.bucket}</span></div><div className="muted small">{item.source}{item.detail?` · ${item.detail}`:''}</div></div><div className="actions todayActions">{item.href&&<a className="btn emailOpen" href={item.href} target="_blank" rel="noreferrer">Open</a>}{item.emailId&&<button className="btn primary" disabled={busy===item.emailId} onClick={()=>markEmailHandled(item.emailId!)}>Done</button>}{item.emailId&&<button className="btn" disabled={busy===item.emailId} onClick={()=>emailTomorrow(item)}>Tomorrow</button>}{item.goalId&&<button className="btn primary" disabled={busy===item.goalId} onClick={()=>completeGoal(item.goalId!)}>Done</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>tomorrowGoal(item.goalId!)}>Tomorrow</button>}{item.goalId&&item.bucket!=='Waiting'&&<button className="btn" disabled={busy===item.goalId} onClick={()=>waitGoal(item.goalId!)}>Waiting</button>}{!item.emailId&&!item.goalId&&<button className="btn" onClick={()=>setTab(item.source==='Decision'?'Decisions':item.source==='CEO'?'CEO':item.source==='Sales'?'Sales':'Daily')}>Open source</button>}</div></div>):<div className="todayEmpty"><strong>Nothing in this bucket.</strong><span>That is a good thing.</span></div>}</div>
     </div>
     <div className="card endDayCard" style={{marginTop:18}}><div><div className="kpiLabel">End of day · 2 minutes</div><h2>Close the loop before tomorrow</h2><p className="muted">{remaining?`${remaining} Now/Today items are still open. Decide what gets finished, moved or consciously left.`:'You have cleared the active queue. Capture the win and set tomorrow up.'}</p></div><div className="endDayGrid"><div className="listItem"><strong>Wins</strong><br/>{latest?.wins||'Not recorded yet.'}</div><div className="listItem"><strong>Lesson</strong><br/>{latest?.lesson||'Not recorded yet.'}</div><div className="listItem"><strong>Tomorrow’s mission</strong><br/>{latest?.tomorrow_mission||'Not set yet.'}</div></div><button className="btn primary" onClick={()=>setTab('Daily')}>Complete Evening Review</button></div>
   </>;
@@ -1020,11 +1026,87 @@ function Business({session,value,reload}:{session:Session,value:any,reload:()=>v
   return <><div className="grid cols4">{[['Sales target','sales_target'],['Actual sales','sales_actual'],['Gross profit','gross_profit'],['Money owed','debtors']].map(([l,k])=><div className="card" key={k}><div className="kpiLabel">{l}</div><input type="number" value={f[k]??''} onChange={e=>setF({...f,[k]:Number(e.target.value)})}/></div>)}</div><div className="card" style={{marginTop:18}}><h2>CEO notes</h2><textarea value={f.notes||''} onChange={e=>setF({...f,notes:e.target.value})}/><button className="btn primary" style={{marginTop:10}} onClick={saveIt}>Save business snapshot</button></div></>
 }
 
-function Sales({session,leads,reload}:{session:Session,leads:any[],reload:()=>void}) {
-  const [f,setF]=useState<any>({stage:'Prospect'});
-  const add=async()=>{const {error}=await supabase.from('sales_leads').insert({...f,user_id:session.user.id});if(error)alert(error.message);else{setF({stage:'Prospect'});reload()}};
-  const del=async(id:string)=>{await supabase.from('sales_leads').delete().eq('id',id);reload()};
-  return <div className="card"><h2>Sales pipeline</h2><div className="grid cols4"><input placeholder="Prospect/customer" value={f.name||''} onChange={e=>setF({...f,name:e.target.value})}/><input placeholder="Contact details" value={f.contact||''} onChange={e=>setF({...f,contact:e.target.value})}/><select value={f.stage} onChange={e=>setF({...f,stage:e.target.value})}>{['Prospect','Contacted','Meeting','Quoted','Won','Lost'].map(x=><option key={x}>{x}</option>)}</select><input placeholder="Next action" value={f.next_action||''} onChange={e=>setF({...f,next_action:e.target.value})}/></div><button className="btn primary" style={{marginTop:10}} onClick={add}>Add record</button><table className="table" style={{marginTop:18}}><thead><tr><th>Name</th><th>Stage</th><th>Contact</th><th>Next action</th><th></th></tr></thead><tbody>{leads.map(l=><tr key={l.id}><td>{l.name}</td><td><span className="badge">{l.stage}</span></td><td>{l.contact}</td><td>{l.next_action}</td><td><button className="btn danger" onClick={()=>del(l.id)}>Delete</button></td></tr>)}</tbody></table></div>
+function SalesCommandCentre({session,leads,emailSummary,reload,setTab}:{session:Session,leads:any[],emailSummary:EmailSummary,reload:()=>void,setTab:(t:string)=>void}) {
+  const stages=['New Lead','Prospect','Contacted','Interested','Meeting','Price List Sent','Quoted','Follow-up','Customer','Won','Lost'];
+  const [f,setF]=useState<any>({stage:'New Lead',follow_up_date:today,source:'Prospecting'});
+  const [stageFilter,setStageFilter]=useState('Active');
+  const [busy,setBusy]=useState<string|null>(null);
+  const active=(l:any)=>!['Customer','Won','Lost'].includes(l.stage||'');
+  const won=(l:any)=>['Customer','Won'].includes(l.stage||'');
+  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
+  const due=leads.filter(l=>active(l)&&l.follow_up_date&&l.follow_up_date<=today);
+  const quoted=leads.filter(l=>['Quoted','Price List Sent','Follow-up'].includes(l.stage||''));
+  const pipeline=leads.filter(active).reduce((a,l)=>a+(Number(l.weekly_value)||Number(l.quoted_value)||0),0);
+  const weeklyWon=leads.filter(won).reduce((a,l)=>a+(Number(l.weekly_value)||0),0);
+  const recent=leads.filter(l=>l.created_at&&Date.now()-new Date(l.created_at).getTime()<=7*86400000).length;
+  const visible=leads.filter(l=>stageFilter==='All'?true:stageFilter==='Active'?active(l):stageFilter==='Customers'?won(l):l.stage===stageFilter);
+  const latestEmail=(lead:any)=>{
+    const addr=(lead.email||'').toLowerCase();
+    if(!addr)return undefined;
+    return emailSummary.messages.find(m=>(m.from?.emailAddress?.address||'').toLowerCase()===addr);
+  };
+  const add=async()=>{
+    if(!f.name?.trim()){alert('Add the prospect or customer name first.');return;}
+    setBusy('new');
+    const payload={...f,user_id:session.user.id,quoted_value:Number(f.quoted_value)||0,weekly_value:Number(f.weekly_value)||0};
+    const {error}=await supabase.from('sales_leads').insert(payload);
+    setBusy(null);
+    if(error)alert(error.message);else{setF({stage:'New Lead',follow_up_date:today,source:'Prospecting'});reload();}
+  };
+  const patch=async(id:string,values:any)=>{setBusy(id);const {error}=await supabase.from('sales_leads').update(values).eq('id',id);setBusy(null);if(error)alert(error.message);else reload();};
+  const del=async(id:string)=>{if(!confirm('Delete this sales record?'))return;setBusy(id);await supabase.from('sales_leads').delete().eq('id',id);setBusy(null);reload();};
+  const best=due[0]||leads.filter(active).sort((a,b)=>(Number(b.weekly_value)||Number(b.quoted_value)||0)-(Number(a.weekly_value)||Number(a.quoted_value)||0))[0];
+  return <>
+    <div className="card salesHero">
+      <div><div className="kpiLabel">Steve · Sales Command Centre</div><div className="heroText">Turn follow-up into new business</div><p className="briefSummary">Keep every prospect moving, know who needs a call, and make the next commercial action obvious.</p></div>
+      <button className="btn primary" onClick={()=>setTab('Today')}>Open Today queue</button>
+    </div>
+    <div className="grid cols4" style={{marginTop:18}}>
+      <Kpi label="Active pipeline" value={leads.filter(active).length}/>
+      <Kpi label="Follow-ups due" value={due.length}/>
+      <Kpi label="Potential weekly value" value={money(pipeline)}/>
+      <Kpi label="Customer weekly value" value={money(weeklyWon)}/>
+    </div>
+    <div className="grid cols2 salesFocusGrid" style={{marginTop:18}}>
+      <div className="card steviePreview"><div className="kpiLabel">Steve’s sales move</div><h2>{best?`Follow up ${best.name}`:'Build the pipeline'}</h2><p className="muted">{best?(best.next_action||`Move this ${best.stage||'prospect'} to a clear next step.`):'Add the next prospect you want to win and give it a follow-up date.'}</p>{best&&<div className="coachCallout">{best.follow_up_date&&best.follow_up_date<=today?'Follow-up is due now. ':''}{best.weekly_value?`Potential weekly value: ${money(best.weekly_value)}. `:''}Do not finish the interaction without agreeing the next action.</div>}</div>
+      <div className="card"><h2>This week</h2><div className="grid cols2"><Kpi label="New records" value={recent}/><Kpi label="Quoted / follow-up" value={quoted.length}/></div><div className="list" style={{marginTop:12}}>{due.slice(0,3).map(l=><div className="listItem" key={l.id}><strong>{l.name}</strong><br/><span className="muted small">Due {l.follow_up_date} · {l.next_action||'Follow up'}</span></div>)}{!due.length&&<div className="muted">No overdue follow-ups.</div>}</div></div>
+    </div>
+    <div className="card" style={{marginTop:18}}>
+      <div className="goalHeader"><div><div className="kpiLabel">New opportunity</div><h2>Add prospect / customer</h2></div><span className="badge">Keep it simple</span></div>
+      <div className="grid cols3">
+        <Text label="Business name" value={f.name} set={v=>setF({...f,name:v})} input/>
+        <Text label="Contact name" value={f.contact_name} set={v=>setF({...f,contact_name:v})} input/>
+        <Text label="Email" value={f.email} set={v=>setF({...f,email:v})} input/>
+        <Text label="Phone" value={f.phone} set={v=>setF({...f,phone:v})} input/>
+        <Field label="Stage"><select value={f.stage||'New Lead'} onChange={e=>setF({...f,stage:e.target.value})}>{stages.map(x=><option key={x}>{x}</option>)}</select></Field>
+        <Field label="Follow-up date"><input type="date" value={f.follow_up_date||''} onChange={e=>setF({...f,follow_up_date:e.target.value})}/></Field>
+        <Text label="Next action" value={f.next_action} set={v=>setF({...f,next_action:v})} input/>
+        <Text label="Products / opportunity" value={f.products_interested} set={v=>setF({...f,products_interested:v})} input/>
+        <Text label="Current supplier" value={f.current_supplier} set={v=>setF({...f,current_supplier:v})} input/>
+        <Num label="Potential weekly £" value={f.weekly_value} set={v=>setF({...f,weekly_value:v})}/>
+        <Num label="Quote / opportunity £" value={f.quoted_value} set={v=>setF({...f,quoted_value:v})}/>
+        <Text label="Lead source" value={f.source} set={v=>setF({...f,source:v})} input/>
+      </div>
+      <Text label="Notes" value={f.notes} set={v=>setF({...f,notes:v})}/>
+      <button className="btn primary" disabled={busy==='new'} onClick={add}>{busy==='new'?'Saving…':'Add to pipeline'}</button>
+    </div>
+    <div className="card" style={{marginTop:18}}>
+      <div className="inboxBriefTop"><div><div className="kpiLabel">Pipeline</div><h2>Every opportunity has a next action</h2></div><div className="todayFilters">{['Active','Customers','All'].map(x=><button key={x} className={`emailFilter ${stageFilter===x?'active':''}`} onClick={()=>setStageFilter(x)}>{x}</button>)}</div></div>
+      <div className="salesPipelineGrid">{visible.length?visible.map(l=>{const mail=latestEmail(l);return <div className={`salesLeadCard ${l.follow_up_date&&l.follow_up_date<=today&&active(l)?'salesDue':''}`} key={l.id}>
+        <div className="goalHeader"><div><strong>{l.name}</strong><div className="muted small">{l.contact_name||l.contact||'No contact name'}{l.phone?` · ${l.phone}`:''}</div></div><span className="badge">{l.stage||'Prospect'}</span></div>
+        <div className="salesValueRow"><span>Potential / week</span><strong>{money(l.weekly_value)}</strong></div>
+        <div className="listItem salesNext"><strong>Next action</strong><br/>{l.next_action||'Set the next action'}<div className="muted small">Follow-up: {l.follow_up_date||'Not set'}</div></div>
+        {l.products_interested&&<div className="muted small salesMeta"><strong>Opportunity:</strong> {l.products_interested}</div>}
+        {l.current_supplier&&<div className="muted small salesMeta"><strong>Current supplier:</strong> {l.current_supplier}</div>}
+        {mail&&<div className="salesEmailLink"><span className="badge">Outlook matched</span><span className="muted small">{mail.subject}</span>{mail.webLink&&<a href={mail.webLink} target="_blank" rel="noreferrer">Open email</a>}</div>}
+        <div className="grid cols2 salesEditGrid">
+          <Field label="Stage"><select value={l.stage||'Prospect'} onChange={e=>patch(l.id,{stage:e.target.value,last_contacted:e.target.value==='Contacted'?today:l.last_contacted})}>{stages.map(x=><option key={x}>{x}</option>)}</select></Field>
+          <Field label="Next follow-up"><input type="date" value={l.follow_up_date||''} onChange={e=>patch(l.id,{follow_up_date:e.target.value})}/></Field>
+        </div>
+        <div className="actions"><button className="btn" disabled={busy===l.id} onClick={()=>patch(l.id,{last_contacted:today,follow_up_date:TomorrowDate()})}>Contacted today</button>{!won(l)&&<button className="btn primary" disabled={busy===l.id} onClick={()=>patch(l.id,{stage:'Customer',follow_up_date:null})}>Won</button>}<button className="btn danger" disabled={busy===l.id} onClick={()=>del(l.id)}>Delete</button></div>
+      </div>}):<div className="muted">No sales records in this view yet.</div>}</div>
+    </div>
+  </>;
 }
 
 function Relationships({session,entries,settings,reload}:{session:Session,entries:DailyEntry[],settings:any,reload:()=>void}) {

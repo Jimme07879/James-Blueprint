@@ -161,3 +161,7 @@ Version 5.4 adds a unified Today board. It combines actionable Outlook email, Da
 - Smarter morning brief using Outlook + Today + CEO signals
 - Draft reply suggestions with copy-to-Outlook workflow
 - No new SQL or environment variables required
+
+
+## Version 5.6 — Sales Command Centre
+Adds a lightweight sales pipeline, follow-up dates, opportunity values, Outlook matching and Steve sales prompts. Run `supabase/v5_6_sales_command.sql` once before deployment/use.
