@@ -165,3 +165,7 @@ Version 5.4 adds a unified Today board. It combines actionable Outlook email, Da
 
 ## Version 5.6 — Sales Command Centre
 Adds a lightweight sales pipeline, follow-up dates, opportunity values, Outlook matching and Steve sales prompts. Run `supabase/v5_6_sales_command.sql` once before deployment/use.
+
+
+## Blueprint OS 5.7 — Financial Intelligence
+Adds CSV-driven turnover, GP, debtors and customer-performance intelligence, with Steve commercial alerts and Sales follow-up creation. Run `supabase/v5_7_financial_intelligence.sql` once before use.

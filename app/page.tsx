@@ -36,6 +36,19 @@ type DecisionItem = {
   lesson?: string|null; created_at?: string;
 };
 
+
+type FinancialRow = {
+  id?: string; import_id?: string; row_date?: string|null; customer?: string|null;
+  sales?: number|null; cost?: number|null; gross_profit?: number|null;
+  amount_due?: number|null; due_date?: string|null; reference?: string|null;
+  source?: string|null; created_at?: string;
+};
+
+type FinancialImport = {
+  id?: string; file_name: string; source?: string|null; imported_at?: string;
+  row_count?: number; total_sales?: number; total_gp?: number; total_due?: number;
+};
+
 type EmailSummary = {
   connected: boolean;
   account?: string;
@@ -49,7 +62,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -101,6 +114,8 @@ function BlueprintApp({session}:{session:Session}) {
   const [leads,setLeads]=useState<any[]>([]);
   const [goals,setGoals]=useState<any[]>([]);
   const [business,setBusiness]=useState<any>({});
+  const [financialRows,setFinancialRows]=useState<FinancialRow[]>([]);
+  const [financialImports,setFinancialImports]=useState<FinancialImport[]>([]);
   const [settings,setSettings]=useState<any>({});
   const [proofItems,setProofItems]=useState<ProofItem[]>([]);
   const [vaultItems,setVaultItems]=useState<VaultItem[]>([]);
@@ -108,7 +123,7 @@ function BlueprintApp({session}:{session:Session}) {
   const [emailSummary,setEmailSummary]=useState<EmailSummary>({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,handled:0,loading:true});
 
   const loadAll=async()=>{
-    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d}] = await Promise.all([
+    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d},{data:fr},{data:fi}] = await Promise.all([
       supabase.from('daily_entries').select('*').order('entry_date'),
       supabase.from('weekly_reviews').select('*').order('week_start',{ascending:false}),
       supabase.from('sales_leads').select('*').order('created_at',{ascending:false}),
@@ -117,10 +132,12 @@ function BlueprintApp({session}:{session:Session}) {
       supabase.from('app_settings').select('*').maybeSingle(),
       supabase.from('proof_items').select('*').order('proof_date',{ascending:false}),
       supabase.from('vault_items').select('*').order('updated_at',{ascending:false}),
-      supabase.from('decision_items').select('*').order('decision_date',{ascending:false})
+      supabase.from('decision_items').select('*').order('decision_date',{ascending:false}),
+      supabase.from('financial_rows').select('*').order('row_date',{ascending:false}).limit(5000),
+      supabase.from('financial_imports').select('*').order('imported_at',{ascending:false}).limit(25)
     ]);
     const entryRows=(e||[]) as DailyEntry[];
-    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]); setDecisionItems((d||[]) as DecisionItem[]);
+    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]); setDecisionItems((d||[]) as DecisionItem[]); setFinancialRows((fr||[]) as FinancialRow[]); setFinancialImports((fi||[]) as FinancialImport[]);
     const todaysEntry=entryRows.find(row=>row.entry_date===today);
     setDaily(todaysEntry||blankDaily);
   };
@@ -1024,6 +1041,92 @@ function Business({session,value,reload}:{session:Session,value:any,reload:()=>v
   const [f,setF]=useState<any>(value||{}); useEffect(()=>setF(value||{}),[value]);
   const saveIt=async()=>{const payload={...f,user_id:session.user.id,snapshot_date:today};delete payload.id;const {error}=await supabase.from('business_snapshots').upsert(payload,{onConflict:'user_id,snapshot_date'});if(error)alert(error.message);else reload()};
   return <><div className="grid cols4">{[['Sales target','sales_target'],['Actual sales','sales_actual'],['Gross profit','gross_profit'],['Money owed','debtors']].map(([l,k])=><div className="card" key={k}><div className="kpiLabel">{l}</div><input type="number" value={f[k]??''} onChange={e=>setF({...f,[k]:Number(e.target.value)})}/></div>)}</div><div className="card" style={{marginTop:18}}><h2>CEO notes</h2><textarea value={f.notes||''} onChange={e=>setF({...f,notes:e.target.value})}/><button className="btn primary" style={{marginTop:10}} onClick={saveIt}>Save business snapshot</button></div></>
+}
+
+
+function parseCsvText(text:string){
+  const rows:string[][]=[]; let row:string[]=[]; let cell=''; let quoted=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(c==='"'){
+      if(quoted&&text[i+1]==='"'){cell+='"';i++;} else quoted=!quoted;
+    }else if(c===','&&!quoted){row.push(cell.trim());cell='';}
+    else if((c==='\n'||c==='\r')&&!quoted){
+      if(c==='\r'&&text[i+1]==='\n')i++;
+      row.push(cell.trim());cell='';
+      if(row.some(v=>v!==''))rows.push(row); row=[];
+    }else cell+=c;
+  }
+  if(cell||row.length){row.push(cell.trim());if(row.some(v=>v!==''))rows.push(row);}
+  return rows;
+}
+function moneyValue(v:any){
+  if(v===null||v===undefined||v==='')return 0;
+  const n=Number(String(v).replace(/[£,$\s]/g,'').replace(/\((.*)\)/,'-$1'));
+  return Number.isFinite(n)?n:0;
+}
+function normalDate(v:any){
+  if(!v)return null; const raw=String(v).trim();
+  const dmy=raw.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if(dmy){let y=dmy[3];if(y.length===2)y=`20${y}`;return `${y}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`;}
+  const d=new Date(raw); return Number.isNaN(d.getTime())?null:d.toISOString().slice(0,10);
+}
+function FinancialIntelligence({session,rows,imports,leads,reload,setTab}:{session:Session,rows:FinancialRow[],imports:FinancialImport[],leads:any[],reload:()=>void,setTab:(t:string)=>void}){
+  const [fileName,setFileName]=useState(''); const [headers,setHeaders]=useState<string[]>([]); const [preview,setPreview]=useState<string[][]>([]);
+  const [rawRows,setRawRows]=useState<string[][]>([]); const [source,setSource]=useState('Sage');
+  const [map,setMap]=useState<Record<string,string>>({date:'',customer:'',sales:'',cost:'',gp:'',due:'',dueDate:'',reference:''});
+  const [busy,setBusy]=useState(false);
+  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
+  const totalSales=rows.reduce((a,r)=>a+(Number(r.sales)||0),0), totalGp=rows.reduce((a,r)=>a+(Number(r.gross_profit)||((Number(r.sales)||0)-(Number(r.cost)||0))),0);
+  const totalDue=rows.reduce((a,r)=>a+(Number(r.amount_due)||0),0);
+  const gpPct=totalSales?totalGp/totalSales*100:0;
+  const now=Date.now(), last28=now-28*86400000, prior28=now-56*86400000;
+  const customerMap=new Map<string,{name:string,current:number,prior:number,last:string|null,due:number}>();
+  rows.forEach(r=>{const name=(r.customer||'').trim();if(!name)return;const key=name.toLowerCase();const x=customerMap.get(key)||{name,current:0,prior:0,last:null,due:0};const t=r.row_date?new Date(r.row_date).getTime():0;if(t>=last28)x.current+=Number(r.sales)||0;else if(t>=prior28)x.prior+=Number(r.sales)||0;if(!x.last||String(r.row_date)>x.last!)x.last=r.row_date||null;x.due+=Number(r.amount_due)||0;customerMap.set(key,x);});
+  const customers=[...customerMap.values()];
+  const declining=customers.filter(c=>c.prior>0&&c.current<c.prior*.8).sort((a,b)=>(a.current-a.prior)-(b.current-b.prior));
+  const dormant=customers.filter(c=>c.last&&new Date(c.last).getTime()<now-21*86400000&&c.prior>0).sort((a,b)=>b.prior-a.prior);
+  const growing=customers.filter(c=>c.current>c.prior*1.2&&c.current>0).sort((a,b)=>(b.current-b.prior)-(a.current-a.prior));
+  const overdue=rows.filter(r=>Number(r.amount_due)>0&&r.due_date&&r.due_date<today).reduce((a,r)=>a+(Number(r.amount_due)||0),0);
+  const weekly=new Map<string,{date:string,sales:number,gp:number}>();
+  rows.forEach(r=>{if(!r.row_date)return;const d=new Date(r.row_date+'T12:00:00');const day=d.getDay();d.setDate(d.getDate()-((day+6)%7));const k=d.toISOString().slice(0,10);const x=weekly.get(k)||{date:k,sales:0,gp:0};x.sales+=Number(r.sales)||0;x.gp+=Number(r.gross_profit)||((Number(r.sales)||0)-(Number(r.cost)||0));weekly.set(k,x);});
+  const weeklyData=[...weekly.values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-12);
+  const suggest=(h:string,keys:string[])=>headers.find(x=>keys.some(k=>x.toLowerCase().includes(k)))||'';
+  const chooseFile=async(e:any)=>{const f=e.target.files?.[0];if(!f)return;const text=await f.text();const parsed=parseCsvText(text);if(parsed.length<2){alert('That CSV does not contain enough rows.');return;}const hs=parsed[0].map(x=>x.trim());setFileName(f.name);setHeaders(hs);setRawRows(parsed.slice(1));setPreview(parsed.slice(1,6));setMap({date:suggest(hs,['date']),customer:suggest(hs,['customer','account name','name']),sales:suggest(hs,['sales','net value','revenue','turnover','net amount']),cost:suggest(hs,['cost']),gp:suggest(hs,['gross profit','margin value','gp']),due:suggest(hs,['amount due','outstanding','balance']),dueDate:suggest(hs,['due date']),reference:suggest(hs,['reference','invoice','document'])});};
+  const idx=(key:string)=>headers.indexOf(map[key]);
+  const importIt=async()=>{if(!fileName){alert('Choose a CSV first.');return;}setBusy(true);
+    const {data:imp,error:ie}=await supabase.from('financial_imports').insert({user_id:session.user.id,file_name:fileName,source,row_count:rawRows.length}).select().single();
+    if(ie){setBusy(false);alert(ie.message);return;}
+    const payload=rawRows.map(r=>{const sales=idx('sales')>=0?moneyValue(r[idx('sales')]):0,cost=idx('cost')>=0?moneyValue(r[idx('cost')]):0;return {user_id:session.user.id,import_id:imp.id,row_date:idx('date')>=0?normalDate(r[idx('date')]):today,customer:idx('customer')>=0?r[idx('customer')]||null:null,sales,cost,gross_profit:idx('gp')>=0?moneyValue(r[idx('gp')]):sales-cost,amount_due:idx('due')>=0?moneyValue(r[idx('due')]):0,due_date:idx('dueDate')>=0?normalDate(r[idx('dueDate')]):null,reference:idx('reference')>=0?r[idx('reference')]||null:null,source};}).filter(r=>r.customer||r.sales||r.amount_due||r.reference);
+    for(let i=0;i<payload.length;i+=500){const {error}=await supabase.from('financial_rows').insert(payload.slice(i,i+500));if(error){setBusy(false);alert(error.message);return;}}
+    const sums=payload.reduce((a,r)=>({sales:a.sales+r.sales,gp:a.gp+r.gross_profit,due:a.due+r.amount_due}),{sales:0,gp:0,due:0});
+    await supabase.from('financial_imports').update({row_count:payload.length,total_sales:sums.sales,total_gp:sums.gp,total_due:sums.due}).eq('id',imp.id);
+    setBusy(false);setFileName('');setHeaders([]);setRawRows([]);setPreview([]);await reload();
+  };
+  const createFollowUp=async(c:any,reason:string)=>{const existing=leads.find(l=>(l.name||'').toLowerCase()===c.name.toLowerCase());if(existing){await supabase.from('sales_leads').update({follow_up_date:today,next_action:reason}).eq('id',existing.id);}else{await supabase.from('sales_leads').insert({user_id:session.user.id,name:c.name,stage:'Follow-up',follow_up_date:today,next_action:reason,source:'Financial Intelligence'});}await reload();setTab('Sales');};
+  const alertItem=declining[0]?{title:`${declining[0].name} is down`,detail:`Last 28 days ${money(declining[0].current)} vs ${money(declining[0].prior)} previously.`,c:declining[0],action:'Call the customer and understand the drop.'}:dormant[0]?{title:`${dormant[0].name} looks dormant`,detail:`No recent sale detected. Previous-period spend ${money(dormant[0].prior)}.`,c:dormant[0],action:'Reconnect and ask what has changed.'}:overdue>0?{title:`${money(overdue)} appears overdue`,detail:'Outstanding rows have due dates before today.',c:null,action:'Review debtors and prioritise collection.'}:{title:'No major commercial warning detected',detail:'Import more recent customer-level data to sharpen Steve’s view.',c:null,action:'Keep the data current.'};
+  return <>
+    <div className="card financeHero"><div><div className="kpiLabel">Steve · Financial Intelligence</div><div className="heroText">Know what the numbers mean</div><p className="briefSummary">Sage and Fresho remain your source systems. Blueprint turns imported figures into customer actions and commercial signals.</p></div><button className="btn primary" onClick={()=>document.getElementById('finance-file')?.click()}>Import CSV</button></div>
+    <div className="grid cols4"><Kpi label="Imported sales" value={money(totalSales)}/><Kpi label="Gross profit" value={money(totalGp)}/><Kpi label="GP %" value={`${gpPct.toFixed(1)}%`}/><Kpi label="Money owed" value={money(totalDue)}/></div>
+    <div className="grid financeFocusGrid">
+      <div className="card financeSteve"><div className="kpiLabel">STEVE'S FINANCIAL BRIEF</div><h2>{alertItem.title}</h2><p>{alertItem.detail}</p><div className="emailWhy"><strong>Suggested move</strong><span>{alertItem.action}</span></div>{alertItem.c&&<button className="btn primary" onClick={()=>createFollowUp(alertItem.c!,alertItem.action)}>Create sales follow-up</button>}</div>
+      <div className="card"><h2>Debtors</h2><div className="list"><div className="listItem"><strong>{money(totalDue)}</strong><br/><span className="muted">Total imported outstanding</span></div><div className="listItem"><strong>{money(overdue)}</strong><br/><span className="muted">Past imported due date</span></div></div></div>
+    </div>
+    {weeklyData.length>1&&<div className="card"><h2>12-week sales & gross profit</h2><div style={{width:'100%',height:280}}><ResponsiveContainer><LineChart data={weeklyData}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date"/><YAxis/><Tooltip formatter={(v:any)=>money(v)}/><Line type="monotone" dataKey="sales" stroke="#657c9d" strokeWidth={2}/><Line type="monotone" dataKey="gp" stroke="#8d98a5" strokeWidth={2}/></LineChart></ResponsiveContainer></div></div>}
+    <div className="grid cols3 financeCustomerGrid">
+      <div className="card"><h2>Declining customers</h2><div className="list">{declining.slice(0,6).map(c=><div className="listItem" key={c.name}><strong>{c.name}</strong><br/><span className="muted">{money(c.current)} vs {money(c.prior)}</span><div><button className="btn" onClick={()=>createFollowUp(c,'Customer spend has declined — call and understand why.')}>Follow up</button></div></div>)}{!declining.length&&<div className="muted">No 20%+ declines detected yet.</div>}</div></div>
+      <div className="card"><h2>Dormant customers</h2><div className="list">{dormant.slice(0,6).map(c=><div className="listItem" key={c.name}><strong>{c.name}</strong><br/><span className="muted">Last sale {c.last}</span><div><button className="btn" onClick={()=>createFollowUp(c,'Customer appears dormant — reconnect and ask what has changed.')}>Follow up</button></div></div>)}{!dormant.length&&<div className="muted">No dormant customers detected yet.</div>}</div></div>
+      <div className="card"><h2>Growing customers</h2><div className="list">{growing.slice(0,6).map(c=><div className="listItem" key={c.name}><strong>{c.name}</strong><br/><span className="muted">{money(c.current)} · up {money(c.current-c.prior)}</span></div>)}{!growing.length&&<div className="muted">Growth signals will appear as data builds.</div>}</div></div>
+    </div>
+    <div className="card financeImport">
+      <div className="goalHeader"><div><div className="kpiLabel">CSV IMPORT CENTRE</div><h2>Bring Sage / Fresho data into Blueprint</h2></div><select value={source} onChange={e=>setSource(e.target.value)}><option>Sage</option><option>Fresho</option><option>Other</option></select></div>
+      <input id="finance-file" type="file" accept=".csv,text/csv" onChange={chooseFile}/>
+      {headers.length>0&&<><p className="muted small">{fileName} · {rawRows.length} rows. Map only the fields your file contains.</p><div className="financeMap">{[['date','Date'],['customer','Customer'],['sales','Sales / net value'],['cost','Cost'],['gp','Gross profit'],['due','Amount due'],['dueDate','Due date'],['reference','Reference / invoice']].map(([k,l])=><Field key={k} label={l}><select value={map[k]||''} onChange={e=>setMap({...map,[k]:e.target.value})}><option value="">Not in this file</option>{headers.map(h=><option key={h}>{h}</option>)}</select></Field>)}</div>
+      <div className="financePreview"><table><thead><tr>{headers.slice(0,6).map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{preview.map((r,i)=><tr key={i}>{headers.slice(0,6).map((_,j)=><td key={j}>{r[j]}</td>)}</tr>)}</tbody></table></div>
+      <button className="btn primary" disabled={busy} onClick={importIt}>{busy?'Importing…':`Import ${rawRows.length} rows`}</button></>}
+    </div>
+    <div className="card"><h2>Import history</h2><div className="list">{imports.map(i=><div className="listItem" key={i.id}><strong>{i.file_name}</strong><br/><span className="muted">{i.source||'CSV'} · {i.row_count||0} rows · Sales {money(i.total_sales)} · GP {money(i.total_gp)} · Due {money(i.total_due)}</span></div>)}{!imports.length&&<div className="muted">No financial CSVs imported yet.</div>}</div></div>
+  </>;
 }
 
 function SalesCommandCentre({session,leads,emailSummary,reload,setTab}:{session:Session,leads:any[],emailSummary:EmailSummary,reload:()=>void,setTab:(t:string)=>void}) {
