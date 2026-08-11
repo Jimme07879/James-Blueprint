@@ -169,3 +169,7 @@ Adds a lightweight sales pipeline, follow-up dates, opportunity values, Outlook 
 
 ## Blueprint OS 5.7 — Financial Intelligence
 Adds CSV-driven turnover, GP, debtors and customer-performance intelligence, with Steve commercial alerts and Sales follow-up creation. Run `supabase/v5_7_financial_intelligence.sql` once before use.
+
+
+## Blueprint OS 5.8 — Customer Intelligence
+Adds Customer 360 health scoring across financial behaviour, Sales records and Outlook signals. No new SQL beyond 5.7.

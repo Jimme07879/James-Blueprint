@@ -277,3 +277,14 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
 .financePreview th{background:var(--soft);font-weight:800}
 @media(max-width:1000px){.financeFocusGrid{grid-template-columns:1fr}.financeMap{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:700px){.financeHero{align-items:flex-start;flex-direction:column}.financeHero .btn{width:100%}.financeMap{grid-template-columns:1fr}}
+
+/* Blueprint OS 5.8 — Customer Intelligence */
+.customerHero{background:radial-gradient(circle at 95% 0%,rgba(86,122,101,.17),transparent 38%),linear-gradient(135deg,var(--panel),var(--panel-2));border-top:3px solid #718a78}
+.customer360{display:grid;grid-template-columns:minmax(260px,.75fr) minmax(0,2fr);gap:16px;align-items:start}
+.customerList{position:sticky;top:18px;max-height:calc(100vh - 36px);display:flex;flex-direction:column}.customerList>input{margin:10px 0}.customerList>.list{overflow-y:auto;padding-right:3px}
+.customerRow{width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;text-align:left;border:1px solid var(--line);background:var(--panel);color:var(--text);padding:11px;border-radius:13px;cursor:pointer}.customerRow.active{outline:2px solid rgba(95,120,105,.35);background:var(--soft)}
+.customerRow span:first-child{min-width:0}.customerRow strong{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.customerRow small{display:block;color:var(--muted);margin-top:3px}
+.healthPill{width:38px;height:38px;border-radius:999px;display:grid;place-items:center;font-weight:900;border:1px solid var(--line);flex:0 0 auto}.healthBadge{min-width:92px;border-radius:18px;padding:10px 14px;text-align:center;border:1px solid var(--line);background:var(--soft)}.healthBadge strong{display:block;font-size:26px}.healthBadge span{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em}
+.healthStrong{background:rgba(78,130,92,.13)}.healthWatch{background:rgba(181,143,62,.13)}.healthAtRisk,.healthUrgent{background:rgba(168,80,80,.13)}
+.customerDetail{display:grid;gap:16px}.customerKpis{margin-top:14px}.customerSignal{margin-top:16px;padding:16px;border-radius:16px;background:var(--soft);border:1px solid var(--line)}
+@media(max-width:950px){.customer360{grid-template-columns:1fr}.customerList{position:static;max-height:none}.customerList>.list{max-height:340px}.customerKpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
