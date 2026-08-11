@@ -1091,7 +1091,7 @@ function FinancialIntelligence({session,rows,imports,leads,reload,setTab}:{sessi
   const weekly=new Map<string,{date:string,sales:number,gp:number}>();
   rows.forEach(r=>{if(!r.row_date)return;const d=new Date(r.row_date+'T12:00:00');const day=d.getDay();d.setDate(d.getDate()-((day+6)%7));const k=d.toISOString().slice(0,10);const x=weekly.get(k)||{date:k,sales:0,gp:0};x.sales+=Number(r.sales)||0;x.gp+=Number(r.gross_profit)||((Number(r.sales)||0)-(Number(r.cost)||0));weekly.set(k,x);});
   const weeklyData=[...weekly.values()].sort((a,b)=>a.date.localeCompare(b.date)).slice(-12);
-  const suggest=(h:string,keys:string[])=>headers.find(x=>keys.some(k=>x.toLowerCase().includes(k)))||'';
+  const suggest=(h:string[],keys:string[])=>h.find(x=>keys.some(k=>x.toLowerCase().includes(k)))||'';
   const chooseFile=async(e:any)=>{const f=e.target.files?.[0];if(!f)return;const text=await f.text();const parsed=parseCsvText(text);if(parsed.length<2){alert('That CSV does not contain enough rows.');return;}const hs=parsed[0].map(x=>x.trim());setFileName(f.name);setHeaders(hs);setRawRows(parsed.slice(1));setPreview(parsed.slice(1,6));setMap({date:suggest(hs,['date']),customer:suggest(hs,['customer','account name','name']),sales:suggest(hs,['sales','net value','revenue','turnover','net amount']),cost:suggest(hs,['cost']),gp:suggest(hs,['gross profit','margin value','gp']),due:suggest(hs,['amount due','outstanding','balance']),dueDate:suggest(hs,['due date']),reference:suggest(hs,['reference','invoice','document'])});};
   const idx=(key:string)=>headers.indexOf(map[key]);
   const importIt=async()=>{if(!fileName){alert('Choose a CSV first.');return;}setBusy(true);
