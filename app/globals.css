@@ -196,3 +196,42 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
 .endDayCard{background:linear-gradient(135deg,var(--panel),var(--panel-solid));display:grid;gap:16px}.endDayGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 @media(max-width:1000px){.todayTopGrid{grid-template-columns:1fr}.todayItem{grid-template-columns:1fr}.todayActions{justify-content:flex-start}.endDayGrid{grid-template-columns:1fr}}
 @media(max-width:700px){.todayHero{grid-template-columns:1fr;padding:20px}.todayHeroBadge{width:90px;height:90px;border-radius:27px}.todayHeroBadge strong{font-size:34px}.todayLaunchCard{align-items:flex-start;flex-direction:column}.todayLaunchCard .btn{width:100%}.todayFilters{display:grid;grid-template-columns:1fr 1fr;width:100%;justify-content:stretch}.todayFilters .emailFilter{width:100%}.todayActions{display:grid;grid-template-columns:1fr 1fr;width:100%}.todayActions .btn,.todayActions .emailOpen{text-align:center;width:100%}}
+
+/* Blueprint OS 5.4.1 — scrollable sidebar fix */
+.sidebar{
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+  height:100dvh;
+  overflow:hidden;
+}
+.sidebar .brand{flex:0 0 auto}
+.sidebar .nav{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  padding-right:4px;
+  padding-bottom:12px;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(255,255,255,.25) transparent;
+}
+.sidebar .nav::-webkit-scrollbar{width:6px}
+.sidebar .nav::-webkit-scrollbar-track{background:transparent}
+.sidebar .nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.22);border-radius:999px}
+.sidebarFooter{
+  position:static;
+  flex:0 0 auto;
+  margin-top:10px;
+  padding-top:14px;
+  border-top:1px solid rgba(255,255,255,.08);
+}
+@media(max-width:900px){
+  .sidebar{
+    height:100vh;
+    height:100dvh;
+    overflow:hidden;
+    padding-bottom:max(16px,env(safe-area-inset-bottom));
+  }
+  .sidebar .nav{-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+}
