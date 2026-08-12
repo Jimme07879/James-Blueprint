@@ -310,3 +310,10 @@ input:focus,textarea:focus,select:focus{border-color:rgba(61,85,125,.48);box-sha
 .actionButtons{gap:7px}.quietBtn{opacity:.78}.nextActionStack{display:grid;gap:8px;margin-top:14px}.nextActionStack .btn{width:100%}.nextAction60{position:sticky;top:18px}
 @media(max-width:850px){.actionBuckets{grid-template-columns:1fr}.nextAction60{position:static}}
 @media(max-width:600px){.actionButtons .btn{flex:1 1 calc(50% - 7px)}.heroActions .btn{flex:1 1 100%}}
+
+/* Blueprint OS 6.1 — Sage Live */
+.sageHero{display:flex;justify-content:space-between;align-items:center;gap:18px;background:radial-gradient(circle at 90% 0%,rgba(78,135,84,.17),transparent 38%),linear-gradient(135deg,var(--panel),var(--panel-2));border-top:4px solid #638b68}
+.sageStatus{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:900;letter-spacing:.12em;border:1px solid var(--line);padding:9px 12px;border-radius:999px}.sageStatus span{width:9px;height:9px;border-radius:50%;background:#a85f5f}.sageStatus.live span{background:#4b925b;box-shadow:0 0 0 5px rgba(75,146,91,.12)}
+.sageSetupGrid{grid-template-columns:1fr 1fr}.bridgeKeyBox{display:grid;gap:10px;margin-top:14px;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--soft)}.bridgeKeyBox code{word-break:break-all;font-size:11px;padding:10px;background:var(--panel);border-radius:10px}
+.sageCustomerTable{overflow:auto;border:1px solid var(--line);border-radius:14px;margin-top:12px}.sageCustomerTable table{width:100%;border-collapse:collapse;min-width:760px}.sageCustomerTable th,.sageCustomerTable td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);font-size:12px}.sageCustomerTable th{background:var(--soft);font-weight:900}
+@media(max-width:850px){.sageSetupGrid{grid-template-columns:1fr}.sageHero{align-items:flex-start;flex-direction:column}}

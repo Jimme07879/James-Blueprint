@@ -49,6 +49,16 @@ type FinancialImport = {
   row_count?: number; total_sales?: number; total_gp?: number; total_due?: number;
 };
 
+type SageCustomer = {
+  user_id?: string; account_ref: string; name?: string|null; balance?: number|null;
+  credit_limit?: number|null; email?: string|null; telephone?: string|null;
+  raw?: Record<string,any>|null; synced_at?: string|null;
+};
+type SageBridgeStatus = {
+  user_id?: string; bridge_name?: string|null; enabled?: boolean; last_seen?: string|null;
+  last_sync_status?: string|null; last_sync_message?: string|null; last_customer_count?: number|null;
+};
+
 type EmailSummary = {
   connected: boolean;
   account?: string;
@@ -62,7 +72,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -116,6 +126,8 @@ function BlueprintApp({session}:{session:Session}) {
   const [business,setBusiness]=useState<any>({});
   const [financialRows,setFinancialRows]=useState<FinancialRow[]>([]);
   const [financialImports,setFinancialImports]=useState<FinancialImport[]>([]);
+  const [sageCustomers,setSageCustomers]=useState<SageCustomer[]>([]);
+  const [sageBridgeStatus,setSageBridgeStatus]=useState<SageBridgeStatus|null>(null);
   const [settings,setSettings]=useState<any>({});
   const [proofItems,setProofItems]=useState<ProofItem[]>([]);
   const [vaultItems,setVaultItems]=useState<VaultItem[]>([]);
@@ -123,7 +135,7 @@ function BlueprintApp({session}:{session:Session}) {
   const [emailSummary,setEmailSummary]=useState<EmailSummary>({connected:false,messages:[],unread:0,action:0,routineOrders:0,urgent:0,handled:0,loading:true});
 
   const loadAll=async()=>{
-    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d},{data:fr},{data:fi}] = await Promise.all([
+    const [{data:e},{data:w},{data:l},{data:g},{data:b},{data:s},{data:p},{data:v},{data:d},{data:fr},{data:fi},{data:sc},{data:sbs}] = await Promise.all([
       supabase.from('daily_entries').select('*').order('entry_date'),
       supabase.from('weekly_reviews').select('*').order('week_start',{ascending:false}),
       supabase.from('sales_leads').select('*').order('created_at',{ascending:false}),
@@ -134,10 +146,12 @@ function BlueprintApp({session}:{session:Session}) {
       supabase.from('vault_items').select('*').order('updated_at',{ascending:false}),
       supabase.from('decision_items').select('*').order('decision_date',{ascending:false}),
       supabase.from('financial_rows').select('*').order('row_date',{ascending:false}).limit(5000),
-      supabase.from('financial_imports').select('*').order('imported_at',{ascending:false}).limit(25)
+      supabase.from('financial_imports').select('*').order('imported_at',{ascending:false}).limit(25),
+      supabase.from('sage_customers').select('*').order('name',{ascending:true}),
+      supabase.from('sage_bridge_status').select('*').maybeSingle()
     ]);
     const entryRows=(e||[]) as DailyEntry[];
-    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]); setDecisionItems((d||[]) as DecisionItem[]); setFinancialRows((fr||[]) as FinancialRow[]); setFinancialImports((fi||[]) as FinancialImport[]);
+    setEntries(entryRows); setWeekly(w||[]); setLeads(l||[]); setGoals(g||[]); setBusiness((b||[])[0]||{}); setSettings(s||{}); setProofItems((p||[]) as ProofItem[]); setVaultItems((v||[]) as VaultItem[]); setDecisionItems((d||[]) as DecisionItem[]); setFinancialRows((fr||[]) as FinancialRow[]); setFinancialImports((fi||[]) as FinancialImport[]); setSageCustomers((sc||[]) as SageCustomer[]); setSageBridgeStatus((sbs||null) as SageBridgeStatus|null);
     const todaysEntry=entryRows.find(row=>row.entry_date===today);
     setDaily(todaysEntry||blankDaily);
   };
@@ -225,13 +239,14 @@ function BlueprintApp({session}:{session:Session}) {
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
         <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
-      {tab==='Home'&&<Dashboard session={session} entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} financialRows={financialRows} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
+      {tab==='Home'&&<Dashboard session={session} entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} financialRows={financialRows} sageCustomers={sageCustomers} sageBridgeStatus={sageBridgeStatus} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} leads={leads} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
       {tab==='Sales'&&<SalesCommandCentre session={session} leads={leads} emailSummary={emailSummary} reload={loadAll} setTab={setTab}/>}
       {tab==='Finance'&&<FinancialIntelligence session={session} rows={financialRows} imports={financialImports} leads={leads} reload={loadAll} setTab={setTab}/>} 
       {tab==='Customers'&&<CustomerIntelligence session={session} rows={financialRows} leads={leads} emailSummary={emailSummary} reload={loadAll} setTab={setTab}/>} 
+      {tab==='Sage Live'&&<SageLive session={session} customers={sageCustomers} status={sageBridgeStatus} reload={loadAll}/>} 
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} emailSummary={emailSummary} setTab={setTab}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
@@ -762,7 +777,7 @@ type SteveCommandAlert = {
 
 type SteveAlertState = { alert_key:string; status:string; snoozed_until?:string|null };
 
-function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionItems,emailSummary,financialRows,reload,refreshEmail,setTab}:{session:Session,entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],emailSummary:EmailSummary,financialRows:FinancialRow[],reload:()=>void,refreshEmail:()=>void,setTab:(t:string)=>void}) {
+function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionItems,emailSummary,financialRows,sageCustomers,sageBridgeStatus,reload,refreshEmail,setTab}:{session:Session,entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],emailSummary:EmailSummary,financialRows:FinancialRow[],sageCustomers:SageCustomer[],sageBridgeStatus:SageBridgeStatus|null,reload:()=>void,refreshEmail:()=>void,setTab:(t:string)=>void}) {
   const [alertStates,setAlertStates]=useState<SteveAlertState[]>([]);
   const [busy,setBusy]=useState<string|null>(null);
   const latest=entries.at(-1);
@@ -783,6 +798,8 @@ function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionIt
   const gp28=currentRows.reduce((a,r)=>a+(Number(r.gross_profit)||((Number(r.sales)||0)-(Number(r.cost)||0))),0);
   const gpPct=sales28?gp28/sales28*100:0;
   const totalDue=financialRows.reduce((a,r)=>a+(Number(r.amount_due)||0),0);
+  const sageLiveDue=sageCustomers.reduce((a,c)=>a+Math.max(0,Number(c.balance)||0),0);
+  const sageLive=sageBridgeStatus?.last_seen?((Date.now()-new Date(sageBridgeStatus.last_seen).getTime())<45*60*1000):false;
   const overdue=financialRows.filter(r=>Number(r.amount_due)>0&&r.due_date&&r.due_date<today).reduce((a,r)=>a+(Number(r.amount_due)||0),0);
   const activeLeads=leads.filter(l=>!['Customer','Won','Lost'].includes(l.stage||''));
   const pipeline=activeLeads.reduce((a,l)=>a+(Number(l.quoted_value)||Number(l.weekly_value)||0),0);
@@ -843,7 +860,7 @@ function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionIt
     </div>
 
     <div className="card businessPulse"><div className="goalHeader"><div><div className="kpiLabel">BUSINESS PULSE</div><h2>Ten-second commercial view</h2></div><button className="btn" onClick={()=>setTab('Finance')}>Open Finance</button></div>
-      <div className="pulseGrid"><div><span>28-day sales</span><strong>{money(sales28)}</strong><small className={salesTrend<0?'pulseBad':'pulseGood'}>{priorSales?`${salesTrend>=0?'+':''}${salesTrend.toFixed(1)}% vs previous 28`:'Waiting for comparison data'}</small></div><div><span>Gross profit</span><strong>{money(gp28)}</strong><small>{gpPct.toFixed(1)}% GP</small></div><div><span>Outstanding</span><strong>{money(totalDue)}</strong><small className={overdue>0?'pulseBad':''}>{money(overdue)} overdue</small></div><div><span>Sales pipeline</span><strong>{money(pipeline)}</strong><small>{activeLeads.length} active opportunities</small></div><div><span>Customer health</span><strong>{atRisk}</strong><small className={atRisk>0?'pulseBad':'pulseGood'}>at risk / urgent</small></div><div><span>Inbox</span><strong>{emailSummary.action}</strong><small>{emailSummary.urgent} urgent signals</small></div></div>
+      <div className="pulseGrid"><div><span>28-day sales</span><strong>{money(sales28)}</strong><small className={salesTrend<0?'pulseBad':'pulseGood'}>{priorSales?`${salesTrend>=0?'+':''}${salesTrend.toFixed(1)}% vs previous 28`:'Waiting for comparison data'}</small></div><div><span>Gross profit</span><strong>{money(gp28)}</strong><small>{gpPct.toFixed(1)}% GP</small></div><div><span>Outstanding</span><strong>{money(sageCustomers.length?sageLiveDue:totalDue)}</strong><small className={overdue>0?'pulseBad':''}>{sageCustomers.length?'Sage live customer balances':`${money(overdue)} overdue`}</small></div><div><span>Sales pipeline</span><strong>{money(pipeline)}</strong><small>{activeLeads.length} active opportunities</small></div><div><span>Customer health</span><strong>{atRisk}</strong><small className={atRisk>0?'pulseBad':'pulseGood'}>at risk / urgent</small></div><div><span>Inbox</span><strong>{emailSummary.action}</strong><small>{emailSummary.urgent} urgent signals</small></div></div>
     </div>
 
     <div className="actionBuckets">
@@ -861,7 +878,7 @@ function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionIt
       <div className="card nextActionCard nextAction60"><div className="kpiLabel">WHAT SHOULD I DO NEXT?</div>{next?<><span className={`bucketTag tag${bucketFor(next)}`}>{bucketFor(next)}</span><h1>{next.title}</h1><p>{next.action}</p><div className="nextReason">{next.reason}</div><div className="nextActionStack"><button className="btn primary" disabled={busy===next.key} onClick={()=>doToday(next)}>Start this</button>{(next.source==='Customers'||next.source==='Sales')&&<button className="btn" onClick={()=>callAlert(next)}>Call now</button>}<button className="btn" onClick={()=>setTab(next.tab)}>Open {next.source}</button><button className="btn" disabled={busy===next.key} onClick={()=>tomorrowAlert(next)}>Move to tomorrow</button></div></>:<><h2>Use the Today Board</h2><p className="muted">Steve has no unresolved commercial alert above the threshold right now.</p><button className="btn primary" onClick={()=>setTab('Today')}>Open Today</button></>}</div>
     </div>
 
-    <div className="grid cols3 commandLower"><div className="card"><div className="kpiLabel">TODAY</div><h2>{latest?.mission||'No mission set yet'}</h2><p className="muted">{latest?.priority_1||'Set Priority 1 in Daily.'}</p><button className="btn" onClick={()=>setTab('Today')}>Today Board</button></div><div className="card"><div className="kpiLabel">OUTLOOK</div><h2>{emailSummary.connected?`${emailSummary.action} need attention`:'Not connected'}</h2><p className="muted">{emailSummary.connected?`${emailSummary.unread} unread · ${emailSummary.routineOrders} routine orders`:'Connect Outlook to Steve.'}</p><button className="btn" onClick={()=>setTab('Email')}>Open Email</button></div><div className="card"><div className="kpiLabel">CUSTOMERS</div><h2>{atRisk?`${atRisk} need watching`:'Customer book healthy'}</h2><p className="muted">Customer health feeds directly into Steve’s action engine.</p><button className="btn" onClick={()=>setTab('Customers')}>Customer 360</button></div></div>
+    <div className="grid cols4 commandLower"><div className="card"><div className="kpiLabel">TODAY</div><h2>{latest?.mission||'No mission set yet'}</h2><p className="muted">{latest?.priority_1||'Set Priority 1 in Daily.'}</p><button className="btn" onClick={()=>setTab('Today')}>Today Board</button></div><div className="card"><div className="kpiLabel">OUTLOOK</div><h2>{emailSummary.connected?`${emailSummary.action} need attention`:'Not connected'}</h2><p className="muted">{emailSummary.connected?`${emailSummary.unread} unread · ${emailSummary.routineOrders} routine orders`:'Connect Outlook to Steve.'}</p><button className="btn" onClick={()=>setTab('Email')}>Open Email</button></div><div className="card"><div className="kpiLabel">CUSTOMERS</div><h2>{atRisk?`${atRisk} need watching`:'Customer book healthy'}</h2><p className="muted">Customer health feeds directly into Steve’s action engine.</p><button className="btn" onClick={()=>setTab('Customers')}>Customer 360</button></div><div className="card"><div className="kpiLabel">SAGE LIVE</div><h2>{sageLive?'Connected':sageBridgeStatus?.last_seen?'Bridge stale':'Not connected'}</h2><p className="muted">{sageCustomers.length?`${sageCustomers.length} customers · ${money(sageLiveDue)} balances synced`:'Set up the Windows Sage Bridge.'}</p><button className="btn" onClick={()=>setTab('Sage Live')}>Open Sage Live</button></div></div>
   </>;
 }
 
@@ -1102,6 +1119,48 @@ function FinancialIntelligence({session,rows,imports,leads,reload,setTab}:{sessi
       <button className="btn primary" disabled={busy} onClick={importIt}>{busy?'Importing…':`Import ${rawRows.length} rows`}</button></>}
     </div>
     <div className="card"><h2>Import history</h2><div className="list">{imports.map(i=><div className="listItem" key={i.id}><strong>{i.file_name}</strong><br/><span className="muted">{i.source||'CSV'} · {i.row_count||0} rows · Sales {money(i.total_sales)} · GP {money(i.total_gp)} · Due {money(i.total_due)}</span></div>)}{!imports.length&&<div className="muted">No financial CSVs imported yet.</div>}</div></div>
+  </>;
+}
+
+
+
+function randomBridgeKey(){
+  const bytes=new Uint8Array(32); crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function sha256Hex(value:string){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function SageLive({session,customers,status,reload}:{session:Session,customers:SageCustomer[],status:SageBridgeStatus|null,reload:()=>void}){
+  const [bridgeKey,setBridgeKey]=useState('');
+  const [busy,setBusy]=useState(false);
+  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
+  const totalBalance=customers.reduce((a,c)=>a+Math.max(0,Number(c.balance)||0),0);
+  const creditExposure=customers.reduce((a,c)=>a+(Number(c.credit_limit)||0),0);
+  const lastSeen=status?.last_seen?new Date(status.last_seen):null;
+  const live=!!lastSeen&&(Date.now()-lastSeen.getTime()<45*60*1000);
+  const createKey=async()=>{
+    setBusy(true);
+    const key=randomBridgeKey(); const hash=await sha256Hex(key);
+    const {error}=await supabase.from('sage_bridge_connections').upsert({user_id:session.user.id,bridge_name:'Office Sage 50',bridge_key_hash:hash,enabled:true,updated_at:new Date().toISOString()},{onConflict:'user_id'});
+    setBusy(false); if(error){window.alert(error.message);return;} setBridgeKey(key); await reload();
+  };
+  const downloadConfig=()=>{
+    if(!bridgeKey){window.alert('Generate a new Bridge Key first. It is only shown during this setup session.');return;}
+    const cfg={SupabaseUrl:process.env.NEXT_PUBLIC_SUPABASE_URL||'',SupabaseAnonKey:process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY||'',BridgeKey:bridgeKey,Dsn:'SageLine50v32',SyncMinutes:15};
+    const blob=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'});
+    const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='blueprint-sage-bridge-config.json'; a.click(); URL.revokeObjectURL(url);
+  };
+  return <>
+    <div className="card sageHero"><div><div className="kpiLabel">Blueprint OS 6.1 · Sage Live Bridge</div><div className="heroText">{live?'Sage is live':'Connect the Sage office PC'}</div><p className="briefSummary">Read-only Sage 50 customer and debtor data, synced into Blueprint for Steve. Blueprint does not write back into Sage.</p></div><div className={`sageStatus ${live?'live':'offline'}`}><span></span>{live?'LIVE':status?.last_seen?'STALE':'OFFLINE'}</div></div>
+    <div className="grid cols4"><Kpi label="Sage customers" value={customers.length}/><Kpi label="Customer balances" value={money(totalBalance)}/><Kpi label="Credit limits" value={money(creditExposure)}/><Kpi label="Last sync" value={lastSeen?lastSeen.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'}):'Never'}/></div>
+    <div className="grid sageSetupGrid">
+      <div className="card"><div className="kpiLabel">BRIDGE SETUP</div><h2>1. Create the private bridge key</h2><p className="muted">Blueprint stores only a SHA-256 hash of the key.</p><button className="btn primary" disabled={busy} onClick={createKey}>{busy?'Creating…':'Generate new Bridge Key'}</button>{bridgeKey&&<div className="bridgeKeyBox"><strong>Copy/download this now — it won't be shown again.</strong><code>{bridgeKey}</code><button className="btn" onClick={()=>navigator.clipboard.writeText(bridgeKey)}>Copy key</button><button className="btn" onClick={downloadConfig}>Download bridge config</button></div>}</div>
+      <div className="card"><div className="kpiLabel">WINDOWS BRIDGE</div><h2>2. Install on the Sage computer</h2><p className="muted">The release ZIP contains a <strong>sage-bridge</strong> folder. Copy it to the Sage PC, put the downloaded config inside, then run <strong>Install-BlueprintSageBridge.ps1</strong>.</p><div className="notice">6.1 reads <strong>SALES_LEDGER</strong> using Sage's read-only ODBC driver. It cannot change Sage records.</div></div>
+    </div>
+    <div className="card"><div className="goalHeader"><div><div className="kpiLabel">LIVE CUSTOMER BALANCES</div><h2>Sage customer book</h2></div><button className="btn" onClick={reload}>Refresh Blueprint</button></div><div className="sageCustomerTable"><table><thead><tr><th>A/C</th><th>Customer</th><th>Balance</th><th>Credit limit</th><th>Telephone</th><th>Email</th></tr></thead><tbody>{customers.slice(0,250).map(c=><tr key={c.account_ref}><td>{c.account_ref}</td><td><strong>{c.name||'—'}</strong></td><td>{money(c.balance)}</td><td>{money(c.credit_limit)}</td><td>{c.telephone||'—'}</td><td>{c.email||'—'}</td></tr>)}</tbody></table>{!customers.length&&<div className="muted" style={{padding:16}}>No Sage customers synced yet.</div>}</div></div>
+    {status?.last_sync_message&&<div className="card"><div className="kpiLabel">LAST BRIDGE MESSAGE</div><p>{status.last_sync_message}</p></div>}
   </>;
 }
 
