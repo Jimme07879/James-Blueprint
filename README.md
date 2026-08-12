@@ -181,3 +181,7 @@ Home now combines Finance, Customers, Sales, Outlook and Today into one ranked c
 
 ## Blueprint OS 6.0 — Steve Action OS
 Turns the Steve Command Centre into an action-first Home screen with NOW/TODAY/WATCH prioritisation and direct commercial actions. No new SQL beyond 5.9.
+
+
+## Blueprint OS 6.1 — Sage Live Bridge
+Adds a secure read-only Sage 50 ODBC bridge for live customer/debtor balances and connection health. Run `supabase/v6_1_sage_live_bridge.sql`, deploy, then install the `sage-bridge` folder on the Sage PC.
