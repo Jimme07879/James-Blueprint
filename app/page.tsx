@@ -225,7 +225,7 @@ function BlueprintApp({session}:{session:Session}) {
         <div style={{display:'flex',gap:10,alignItems:'center'}}><button className="btn mobileMenu" onClick={()=>setSidebar(!sidebar)}>☰</button><div><h1>{title}</h1><div className="muted">{new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div></div></div>
         <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
-      {tab==='Home'&&<Dashboard entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} setTab={setTab}/>}
+      {tab==='Home'&&<Dashboard session={session} entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} financialRows={financialRows} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} leads={leads} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
@@ -755,140 +755,94 @@ function DecisionJournal({session,items,reload}:{session:Session,items:DecisionI
   </>
 }
 
-function Dashboard({entries,goals,leads,proofItems,vaultItems,decisionItems,emailSummary,setTab}:{entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],emailSummary:EmailSummary,setTab:(t:string)=>void}) {
-  const recent=entries.slice(-30);
-  const last7=entries.slice(-7);
+type SteveCommandAlert = {
+  key:string; priority:number; title:string; detail:string; reason:string; action:string;
+  source:'Finance'|'Customers'|'Sales'|'Email'|'Today'|'Decisions'; tab:string;
+};
+
+type SteveAlertState = { alert_key:string; status:string; snoozed_until?:string|null };
+
+function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionItems,emailSummary,financialRows,reload,refreshEmail,setTab}:{session:Session,entries:DailyEntry[],goals:any[],leads:any[],proofItems:ProofItem[],vaultItems:VaultItem[],decisionItems:DecisionItem[],emailSummary:EmailSummary,financialRows:FinancialRow[],reload:()=>void,refreshEmail:()=>void,setTab:(t:string)=>void}) {
+  const [alertStates,setAlertStates]=useState<SteveAlertState[]>([]);
+  const [busy,setBusy]=useState<string|null>(null);
   const latest=entries.at(-1);
-  const avg=(rows:DailyEntry[],key:keyof DailyEntry)=>rows.length?rows.reduce((a,e)=>a+(Number(e[key])||0),0)/rows.length:0;
-  const chart=recent.map(e=>({date:e.entry_date.slice(5),overall:e.overall_score||0,sleep:e.sleep_hours||0,energy:e.energy||0}));
-  const smokeFree=recent.filter(e=>e.habits?.['No smoking']).length;
-  const exerciseDays=recent.filter(e=>e.habits?.Exercise).length;
-  const openLeads=leads.filter(l=>!['Won','Lost'].includes(l.stage)).length;
-  const activeGoals=goals.filter(g=>g.status!=='Complete'&&g.status!=='Inbox task').length;
-  const completeGoals=goals.filter(g=>g.status==='Complete').length;
+  const blueprint=calculateBlueprintScore(entries);
   const greetingHour=new Date().getHours();
   const greeting=greetingHour<12?'Good morning':greetingHour<18?'Good afternoon':'Good evening';
-  const habitStreak=(habit:string)=>{
-    let streak=0;
-    for(let i=entries.length-1;i>=0;i--){
-      if(entries[i].habits?.[habit]) streak++; else break;
-    }
-    return streak;
+  const money=(n:any)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(Number(n)||0);
+  const now=Date.now(), d28=28*86400000, d56=56*86400000;
+
+  useEffect(()=>{
+    supabase.from('steve_alerts').select('alert_key,status,snoozed_until').eq('user_id',session.user.id).then(({data})=>setAlertStates((data||[]) as SteveAlertState[]));
+  },[session.user.id]);
+
+  const currentRows=financialRows.filter(r=>r.row_date&&new Date(r.row_date+'T12:00:00').getTime()>=now-d28);
+  const priorRows=financialRows.filter(r=>{if(!r.row_date)return false;const t=new Date(r.row_date+'T12:00:00').getTime();return t>=now-d56&&t<now-d28;});
+  const sales28=currentRows.reduce((a,r)=>a+(Number(r.sales)||0),0);
+  const priorSales=priorRows.reduce((a,r)=>a+(Number(r.sales)||0),0);
+  const gp28=currentRows.reduce((a,r)=>a+(Number(r.gross_profit)||((Number(r.sales)||0)-(Number(r.cost)||0))),0);
+  const gpPct=sales28?gp28/sales28*100:0;
+  const totalDue=financialRows.reduce((a,r)=>a+(Number(r.amount_due)||0),0);
+  const overdue=financialRows.filter(r=>Number(r.amount_due)>0&&r.due_date&&r.due_date<today).reduce((a,r)=>a+(Number(r.amount_due)||0),0);
+  const activeLeads=leads.filter(l=>!['Customer','Won','Lost'].includes(l.stage||''));
+  const pipeline=activeLeads.reduce((a,l)=>a+(Number(l.quoted_value)||Number(l.weekly_value)||0),0);
+  const salesTrend=priorSales?((sales28-priorSales)/priorSales*100):0;
+
+  const customerMap=new Map<string,{name:string,current:number,prior:number,last:string|null,overdue:number}>();
+  financialRows.forEach(r=>{const name=(r.customer||'').trim();if(!name)return;const key=name.toLowerCase();const x=customerMap.get(key)||{name,current:0,prior:0,last:null,overdue:0};const t=r.row_date?new Date(r.row_date+'T12:00:00').getTime():0;if(t>=now-d28)x.current+=Number(r.sales)||0;else if(t>=now-d56)x.prior+=Number(r.sales)||0;if(r.row_date&&(!x.last||r.row_date>x.last))x.last=r.row_date;if(Number(r.amount_due)>0&&r.due_date&&r.due_date<today)x.overdue+=Number(r.amount_due)||0;customerMap.set(key,x);});
+  const customers=[...customerMap.values()].map(c=>{const days=c.last?Math.floor((now-new Date(c.last+'T12:00:00').getTime())/86400000):999;const change=c.prior>0?(c.current-c.prior)/c.prior*100:null;let score=100;if(days>21)score-=30;else if(days>14)score-=15;if(change!==null&&change<-20)score-=25;else if(change!==null&&change<-5)score-=10;if(c.overdue>0)score-=20;return {...c,days,change,score};});
+  const atRisk=customers.filter(c=>c.score<60).length;
+  const worstDecline=customers.filter(c=>c.prior>0&&c.change!==null&&c.change<-20).sort((a,b)=>(a.change||0)-(b.change||0))[0];
+  const dormant=customers.filter(c=>c.days>21&&c.prior>0).sort((a,b)=>b.prior-a.prior)[0];
+  const growing=customers.filter(c=>c.current>c.prior*1.2&&c.current>0).sort((a,b)=>(b.current-b.prior)-(a.current-a.prior))[0];
+  const dueLead=activeLeads.filter(l=>l.follow_up_date&&l.follow_up_date<=today).sort((a,b)=>(Number(b.quoted_value)||Number(b.weekly_value)||0)-(Number(a.quoted_value)||Number(a.weekly_value)||0))[0];
+  const topEmail=emailSummary.messages.map(m=>({m,insight:getEmailInsight(m)})).filter(x=>!(x.m as OutlookMessage & {handled?:boolean}).handled&&x.insight.score>=55&&x.insight.category!=='Routine').sort((a,b)=>b.insight.score-a.insight.score)[0];
+  const decisionDue=decisionItems.find(d=>d.review_status!=='Reviewed'&&d.review_date&&d.review_date<=today);
+  const overdueGoal=goals.find(g=>g.status!=='Complete'&&g.deadline&&g.deadline<today);
+
+  const rawAlerts:SteveCommandAlert[]=[];
+  if(worstDecline) rawAlerts.push({key:`decline-${worstDecline.name.toLowerCase()}`,priority:95,title:`${worstDecline.name} is down ${Math.abs(worstDecline.change||0).toFixed(0)}%`,detail:`${money(worstDecline.current)} in the last 28 days vs ${money(worstDecline.prior)} previously.`,reason:'A meaningful customer revenue decline can become churn if it is left alone.',action:'Call the customer and understand what changed.',source:'Customers',tab:'Customers'});
+  if(overdue>0) rawAlerts.push({key:'overdue-debt',priority:92,title:`${money(overdue)} is overdue`,detail:`Blueprint currently sees ${money(totalDue)} outstanding in imported debtor data.`,reason:'Cash collection has a direct effect on working capital.',action:'Review the overdue accounts and prioritise collection.',source:'Finance',tab:'Finance'});
+  if(dormant&&(!worstDecline||dormant.name!==worstDecline.name)) rawAlerts.push({key:`dormant-${dormant.name.toLowerCase()}`,priority:88,title:`${dormant.name} looks dormant`,detail:`${dormant.days} days since the latest imported sale; prior-period spend ${money(dormant.prior)}.`,reason:'A previously active customer has stopped buying.',action:'Reconnect today and find out where the business has gone.',source:'Customers',tab:'Customers'});
+  if(dueLead) rawAlerts.push({key:`sales-${dueLead.id}`,priority:82,title:`Follow up ${dueLead.name}`,detail:`${dueLead.next_action||'A sales follow-up is due today.'}${Number(dueLead.quoted_value||dueLead.weekly_value)?` · Opportunity ${money(dueLead.quoted_value||dueLead.weekly_value)}`:''}`,reason:'The follow-up date is due and the opportunity is still active.',action:'Make contact and agree the next step.',source:'Sales',tab:'Sales'});
+  if(topEmail) rawAlerts.push({key:`email-${topEmail.m.id}`,priority:Math.min(90,topEmail.insight.score),title:topEmail.m.subject||'Important Outlook message',detail:topEmail.insight.reason,reason:`Steve inbox score ${topEmail.insight.score}/100.`,action:topEmail.insight.suggestedAction,source:'Email',tab:'Email'});
+  if(decisionDue) rawAlerts.push({key:`decision-${decisionDue.id}`,priority:76,title:`Review decision: ${decisionDue.title}`,detail:decisionDue.decision_made,reason:'The review date has arrived.',action:'Review the outcome and capture the lesson.',source:'Decisions',tab:'Decisions'});
+  if(overdueGoal) rawAlerts.push({key:`goal-${overdueGoal.id}`,priority:74,title:`Overdue: ${overdueGoal.title}`,detail:overdueGoal.next_action||'This goal is past its deadline.',reason:'An overdue commitment is still open.',action:'Complete it, re-date it or consciously drop it.',source:'Today',tab:'Today'});
+  if(growing) rawAlerts.push({key:`growth-${growing.name.toLowerCase()}`,priority:58,title:`${growing.name} is growing`,detail:`${money(growing.current)} in the last 28 days vs ${money(growing.prior)} previously.`,reason:'Growing customers are often the easiest place to find incremental revenue.',action:'Ask what else you can supply while momentum is positive.',source:'Customers',tab:'Customers'});
+
+  const stateFor=(key:string)=>alertStates.find(s=>s.alert_key===key);
+  const visibleAlerts=rawAlerts.filter(a=>{const st=stateFor(a.key);if(!st)return true;if(st.status==='done'||st.status==='dismissed')return false;if(st.status==='snoozed'&&st.snoozed_until&&st.snoozed_until>today)return false;return true;}).sort((a,b)=>b.priority-a.priority);
+  const next=visibleAlerts[0];
+
+  const saveAlertState=async(a:SteveCommandAlert,status:string,snoozed_until:string|null=null)=>{
+    setBusy(a.key);
+    const {error}=await supabase.from('steve_alerts').upsert({user_id:session.user.id,alert_key:a.key,status,snoozed_until,title:a.title,source:a.source,updated_at:new Date().toISOString()},{onConflict:'user_id,alert_key'});
+    setBusy(null); if(error){window.alert(error.message);return;}
+    setAlertStates(prev=>[...prev.filter(x=>x.alert_key!==a.key),{alert_key:a.key,status,snoozed_until}]);
   };
-  const entryStreak=()=>{
-    if(!entries.length)return 0;
-    let streak=0;
-    let cursor=new Date();
-    const dates=new Set(entries.map(e=>e.entry_date));
-    if(!dates.has(cursor.toISOString().slice(0,10))) cursor.setDate(cursor.getDate()-1);
-    while(dates.has(cursor.toISOString().slice(0,10))){
-      streak++; cursor.setDate(cursor.getDate()-1);
-    }
-    return streak;
+  const doToday=async(a:SteveCommandAlert)=>{
+    setBusy(a.key); const {error}=await supabase.from('goals').insert({user_id:session.user.id,title:a.title,next_action:`${a.action} · ${a.detail}`,deadline:today,status:'Inbox task'}); setBusy(null);
+    if(error){window.alert(error.message);return;} await saveAlertState(a,'done'); await reload(); setTab('Today');
   };
-  const brief=buildStevieBrief(entries,goals,leads);
-  const blueprint=calculateBlueprintScore(entries);
-  const decisionsDue=decisionItems.filter(i=>i.review_status!=='Reviewed'&&i.review_date&&i.review_date<=today).length;
+  const snooze=async(a:SteveCommandAlert)=>{const d=new Date();d.setDate(d.getDate()+1);await saveAlertState(a,'snoozed',d.toISOString().slice(0,10));};
+
   return <>
-    <div className="card heroCard intelligenceHero executiveHero" style={{marginBottom:18}}>
-      <div>
-        <div className="kpiLabel">{greeting}, James</div>
-        <div className="heroText">{latest?.mission||'Set today’s mission and decide what matters most.'}</div>
-        <div className="actions" style={{marginTop:14}}>
-          <button className="btn primary" onClick={()=>setTab('Today')}>Open Today Board</button>
-          <button className="btn" onClick={()=>setTab('Daily')}>Daily Command Centre</button>
-          <button className="btn" onClick={()=>setTab('Stevie')}>Read Steve’s Brief</button>
-        </div>
-      </div>
-      <div className="streakBadge">{entryStreak()} day check-in streak</div>
+    <div className="card commandHero">
+      <div><div className="kpiLabel">{greeting}, James · Steve Command Centre</div><div className="heroText">{next?next.title:(latest?.mission||'The board is clear — choose the highest-value move.')}</div><p className="briefSummary">{next?next.detail:'No unresolved high-priority commercial signal is currently visible.'}</p><div className="actions"><button className="btn primary" onClick={()=>next?setTab(next.tab):setTab('Today')}>{next?'Do the next thing':'Open Today'}</button><button className="btn" onClick={()=>setTab('Today')}>Today Board</button></div></div>
+      <div className="commandScore"><span>Blueprint</span><strong>{blueprint.score}</strong><small>/100</small></div>
     </div>
 
-    <div className="grid scoreGrid">
-      <div className="card blueprintScoreCard"><div className="scoreRing" style={{'--score':`${blueprint.score}%`} as React.CSSProperties}><div><strong>{blueprint.score}</strong><span>/100</span></div></div><div><div className="kpiLabel">Blueprint Score</div><h2>{blueprint.score>=80?'Strong balance':blueprint.score>=60?'Moving forward':'Needs attention'}</h2><p className="muted">A weighted seven-day view of health, relationships, CEO focus, growth, recovery and reflection.</p></div></div>
-      <div className="card"><h2>Score breakdown</h2><div className="scoreBreakdown">{blueprint.components.map(c=><div key={c.label}><div className="goalHeader"><strong>{c.label}</strong><span>{c.score.toFixed(1)}/10</span></div><div className="progress"><span style={{width:`${Math.min(100,c.score*10)}%`}}></span></div></div>)}</div></div>
+    <div className="card businessPulse"><div className="goalHeader"><div><div className="kpiLabel">BUSINESS PULSE</div><h2>Ten-second commercial view</h2></div><button className="btn" onClick={()=>setTab('Finance')}>Open Finance</button></div>
+      <div className="pulseGrid"><div><span>28-day sales</span><strong>{money(sales28)}</strong><small className={salesTrend<0?'pulseBad':'pulseGood'}>{priorSales?`${salesTrend>=0?'+':''}${salesTrend.toFixed(1)}% vs previous 28`:'Waiting for comparison data'}</small></div><div><span>Gross profit</span><strong>{money(gp28)}</strong><small>{gpPct.toFixed(1)}% GP</small></div><div><span>Outstanding</span><strong>{money(totalDue)}</strong><small className={overdue>0?'pulseBad':''}>{money(overdue)} overdue</small></div><div><span>Sales pipeline</span><strong>{money(pipeline)}</strong><small>{activeLeads.length} active opportunities</small></div><div><span>Customer health</span><strong>{atRisk}</strong><small className={atRisk>0?'pulseBad':'pulseGood'}>at risk / urgent</small></div><div><span>Inbox</span><strong>{emailSummary.action}</strong><small>{emailSummary.urgent} urgent signals</small></div></div>
     </div>
 
-    <div className="card todayLaunchCard">
-      <div><div className="kpiLabel">Steve Daily Ops</div><h2>One queue for everything that matters today</h2><p className="muted">Email actions, CEO focus, Daily priorities, goal deadlines and relationship commitments in one place.</p></div>
-      <button className="btn primary" onClick={()=>setTab('Today')}>Open Today Board</button>
+    <div className="grid commandMainGrid">
+      <div className="card"><div className="goalHeader"><div><div className="kpiLabel">STEVE HAS FOUND {visibleAlerts.length}</div><h2>What matters now</h2></div></div><div className="commandAlerts">{visibleAlerts.slice(0,6).map((a,i)=><div className="commandAlert" key={a.key}><div className="alertRank">{i+1}</div><div className="alertBody"><div className="goalHeader"><strong>{a.title}</strong><span className="sourcePill">{a.source}</span></div><p>{a.detail}</p><div className="emailWhy"><strong>Why this matters</strong><span>{a.reason}</span></div><div className="emailWhy"><strong>Steve recommends</strong><span>{a.action}</span></div><div className="actions"><button className="btn primary" disabled={busy===a.key} onClick={()=>doToday(a)}>Do Today</button><button className="btn" onClick={()=>setTab(a.tab)}>Open</button><button className="btn" disabled={busy===a.key} onClick={()=>snooze(a)}>Snooze</button><button className="btn" disabled={busy===a.key} onClick={()=>saveAlertState(a,'dismissed')}>Dismiss</button><button className="btn" disabled={busy===a.key} onClick={()=>saveAlertState(a,'done')}>Done</button></div></div></div>)}{!visibleAlerts.length&&<div className="emptyCommand"><strong>Nothing critical is shouting for attention.</strong><span>Keep Finance, Sales and Outlook current and Steve will surface new signals here.</span></div>}</div></div>
+      <div className="card nextActionCard"><div className="kpiLabel">WHAT SHOULD I DO NEXT?</div>{next?<><h1>{next.title}</h1><p>{next.action}</p><div className="nextReason">{next.reason}</div><button className="btn primary" disabled={busy===next.key} onClick={()=>doToday(next)}>Put this into Today</button><button className="btn" onClick={()=>setTab(next.tab)}>Open {next.source}</button></>:<><h2>Use the Today Board</h2><p className="muted">Steve has no unresolved commercial alert above the threshold right now.</p><button className="btn primary" onClick={()=>setTab('Today')}>Open Today</button></>}</div>
     </div>
 
-    <div className="card inboxBriefCard">
-      <div className="inboxBriefTop">
-        <div><div className="kpiLabel">Steve’s Inbox Brief</div><h2>{emailSummary.connected?`${emailSummary.action} email${emailSummary.action===1?'':'s'} need attention`:'Outlook not connected'}</h2></div>
-        <button className="btn" onClick={()=>setTab('Email')}>{emailSummary.connected?'Open Email Focus':'Connect Outlook'}</button>
-      </div>
-      {emailSummary.connected?
-        <div className="emailMiniGrid"><span><strong>{emailSummary.unread}</strong> unread</span><span><strong>{emailSummary.routineOrders}</strong> routine orders</span><span><strong>{emailSummary.urgent}</strong> urgent signals</span></div>:
-        <p className="muted">Connect Outlook so Steve can separate routine traffic from messages that deserve your attention.</p>}
-    </div>
-
-    <div className="grid cols4">
-
-      <Kpi label="7-day overall" value={`${avg(last7,'overall_score').toFixed(1)}/10`}/>
-      <Kpi label="7-day sleep" value={`${avg(last7,'sleep_hours').toFixed(1)} hrs`}/>
-      <Kpi label="Open opportunities" value={openLeads}/>
-      <Kpi label="Active goals" value={activeGoals}/>
-    </div>
-
-    <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card steviePreview">
-        <div className="kpiLabel">Steve’s priority</div>
-        <h2>{brief.headline}</h2>
-        <p className="muted">{brief.summary}</p>
-        <div className="coachCallout">{brief.action}</div>
-        <button className="btn" style={{marginTop:12}} onClick={()=>setTab('Stevie')}>See Steve’s full brief</button>
-      </div>
-      <div className="card">
-        <h2>Today’s balance</h2>
-        <div className="list">
-          <div className="listItem"><strong>CEO focus</strong><br/>{latest?.opportunity||'Choose the most valuable opportunity today.'}</div>
-          <div className="listItem"><strong>Relationship</strong><br/>{latest?.relationship_action||'Plan one clear action that makes someone feel valued.'}</div>
-          <div className="listItem"><strong>Health</strong><br/>{latest?.sleep_hours?`${latest.sleep_hours} hours sleep · energy ${latest.energy||'-'}/10`:'Complete your morning health check.'}</div>
-        </div>
-      </div>
-    </div>
-
-    <div className="grid cols2" style={{marginTop:18}}>
-      <div className="card">
-        <h2>Momentum & streaks</h2>
-        <div className="grid cols2">
-          <Kpi label="Exercise streak" value={`${habitStreak('Exercise')} days`}/>
-          <Kpi label="Smoke-free streak" value={`${habitStreak('No smoking')} days`}/>
-          <Kpi label="Exercise days / 30" value={exerciseDays}/>
-          <Kpi label="Smoke-free days / 30" value={smokeFree}/>
-        </div>
-      </div>
-      <div className="card">
-        <h2>Goal progress</h2>
-        <div className="goalProgressNumber">{completeGoals} of {goals.length} complete</div>
-        <div className="progress"><span style={{width:`${goals.length?(completeGoals/goals.length)*100:0}%`}}></span></div>
-        <h3 style={{marginTop:18}}>Decision being avoided</h3>
-        <div className="listItem">{latest?.avoiding||'Nothing recorded today.'}</div>
-      </div>
-    </div>
-
-    <div className="grid cols3" style={{marginTop:18}}>
-      <div className="card">
-        <div className="goalHeader"><h2>Proof</h2><button className="btn" onClick={()=>setTab('Proof')}>Open timeline</button></div>
-        {proofItems.length?<div className="listItem"><strong>{proofItems[0].title}</strong><br/><span className="muted small">{proofItems[0].proof_date} · {proofItems[0].category||'Achievement'}</span><br/>{proofItems[0].story||''}</div>:<div className="muted">Record the difficult things you have done so you can look back when confidence dips.</div>}
-      </div>
-      <div className="card">
-        <div className="goalHeader"><h2>Blueprint Vault</h2><button className="btn" onClick={()=>setTab('Vault')}>Open vault</button></div>
-        {vaultItems.length?<div className="listItem"><strong>{vaultItems[0].title}</strong><br/><span className="muted small">{vaultItems[0].section}</span><br/>{vaultItems[0].content}</div>:<div className="muted">Store your vision, values, principles, goals and lessons here.</div>}
-      </div>      <div className="card">
-        <div className="goalHeader"><h2>Decisions</h2><button className="btn" onClick={()=>setTab('Decisions')}>Open journal</button></div>
-        <div className="kpi">{decisionsDue}</div><div className="muted">reviews due</div>
-        {decisionItems.length?<div className="listItem" style={{marginTop:12}}><strong>{decisionItems[0].title}</strong><br/><span className="muted small">{decisionItems[0].decision_date} · {decisionItems[0].category}</span><br/>{decisionItems[0].decision_made}</div>:<div className="muted" style={{marginTop:12}}>Record important choices and review whether they worked.</div>}
-      </div>
-
-    </div>
-
-    <div className="grid cols2" style={{marginTop:18}}>
-      <ChartCard title="30-day overall score" data={chart} keys={['overall']}/>
-      <ChartCard title="Sleep and energy" data={chart} keys={['sleep','energy']}/>
-    </div>
-  </>
+    <div className="grid cols3 commandLower"><div className="card"><div className="kpiLabel">TODAY</div><h2>{latest?.mission||'No mission set yet'}</h2><p className="muted">{latest?.priority_1||'Set Priority 1 in Daily.'}</p><button className="btn" onClick={()=>setTab('Daily')}>Daily Command Centre</button></div><div className="card"><div className="kpiLabel">OUTLOOK</div><h2>{emailSummary.connected?`${emailSummary.action} need attention`:'Not connected'}</h2><p className="muted">{emailSummary.connected?`${emailSummary.unread} unread · ${emailSummary.routineOrders} routine orders`:'Connect Outlook to Steve.'}</p><button className="btn" onClick={()=>setTab('Email')}>Open Email</button></div><div className="card"><div className="kpiLabel">CUSTOMERS</div><h2>{atRisk?`${atRisk} need watching`:'Customer book healthy'}</h2><p className="muted">Customer health now feeds directly into Steve’s priority engine.</p><button className="btn" onClick={()=>setTab('Customers')}>Customer 360</button></div></div>
+  </>;
 }
 
 function Kpi({label,value}:{label:string,value:any}){return <div className="card kpiCard"><div className="kpiLabel">{label}</div><div className="kpi">{value}</div></div>}

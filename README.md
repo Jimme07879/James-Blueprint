@@ -173,3 +173,7 @@ Adds CSV-driven turnover, GP, debtors and customer-performance intelligence, wit
 
 ## Blueprint OS 5.8 — Customer Intelligence
 Adds Customer 360 health scoring across financial behaviour, Sales records and Outlook signals. No new SQL beyond 5.7.
+
+
+## Blueprint OS 5.9 — Steve Command Centre
+Home now combines Finance, Customers, Sales, Outlook and Today into one ranked command brief. Run `supabase/v5_9_steve_command_centre.sql` once for persistent alert controls.
