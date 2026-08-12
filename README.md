@@ -177,3 +177,7 @@ Adds Customer 360 health scoring across financial behaviour, Sales records and O
 
 ## Blueprint OS 5.9 — Steve Command Centre
 Home now combines Finance, Customers, Sales, Outlook and Today into one ranked command brief. Run `supabase/v5_9_steve_command_centre.sql` once for persistent alert controls.
+
+
+## Blueprint OS 6.0 — Steve Action OS
+Turns the Steve Command Centre into an action-first Home screen with NOW/TODAY/WATCH prioritisation and direct commercial actions. No new SQL beyond 5.9.
