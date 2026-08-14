@@ -1,5 +1,6 @@
 import './globals.css';
 import type { Metadata } from 'next';
+import HomeDebtorsPanel from './HomeDebtorsPanel';
 
 export const metadata: Metadata = {
   title: 'Blueprint OS',
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>{children}<HomeDebtorsPanel /></body>
     </html>
   );
 }
