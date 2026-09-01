@@ -1,5 +1,6 @@
 import './globals.css';
 import './home-fix.css';
+import './blueprint-blue.css';
 import type { Metadata } from 'next';
 import HomeDebtorsPanel from './HomeDebtorsPanel';
 
