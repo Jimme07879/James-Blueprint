@@ -3,6 +3,7 @@ import './home-fix.css';
 import './blueprint-blue.css';
 import type { Metadata } from 'next';
 import HomeDebtorsPanel from './HomeDebtorsPanel';
+import HomeSageSales from './HomeSageSales';
 
 export const metadata: Metadata = {
   title: 'Blueprint OS',
@@ -12,7 +13,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}<HomeDebtorsPanel /></body>
+      <body>{children}<HomeSageSales /><HomeDebtorsPanel /></body>
     </html>
   );
 }
