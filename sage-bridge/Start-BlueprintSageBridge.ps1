@@ -14,10 +14,19 @@ function Read-Table($connection,[string]$sql){
   $reader.Close();return $rows
 }
 function Send-Blueprint($config,$payload){
-  $body=@{p_bridge_key=$config.BridgeKey;p_payload=$payload}|ConvertTo-Json -Depth 10
+  $body=@{p_bridge_key=$config.BridgeKey;p_payload=$payload}|ConvertTo-Json -Depth 10 -Compress
   $headers=@{apikey=$config.SupabaseAnonKey;Authorization="Bearer $($config.SupabaseAnonKey)"}
   $uri="$($config.SupabaseUrl.TrimEnd('/'))/rest/v1/rpc/sage_bridge_ingest"
-  return Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType "application/json" -Body $body
+  return Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($body))
+}
+function Send-In-Chunks($config,[array]$items,[int]$chunkSize,[scriptblock]$payloadFactory){
+  $results=@()
+  for($offset=0;$offset -lt $items.Count;$offset+=$chunkSize){
+    $end=[math]::Min($offset+$chunkSize-1,$items.Count-1)
+    $chunk=@($items[$offset..$end])
+    $results+=Send-Blueprint $config (& $payloadFactory $chunk)
+  }
+  return $results
 }
 
 if(!(Test-Path $ConfigPath)){throw "Missing config: $ConfigPath"}
@@ -39,7 +48,6 @@ try{
   $customerResult=Send-Blueprint $config @{kind='customers';bridge_name='Office Sage 50';bridge_version='6.3-profit';message='Read-only SALES_LEDGER sync completed';customers=$customers;active_account_refs=$customerRefs}
   Write-Host ("Blueprint customer sync complete: {0} customers" -f $customers.Count) -ForegroundColor Green
 
-  # Only active audit transactions. Sage documents DELETED_FLAG=0 as active.
   $auditRows=Read-Table $conn "SELECT * FROM AUDIT_HEADER WHERE DELETED_FLAG=0"
   $transactions=@()
   foreach($row in $auditRows){
@@ -52,11 +60,10 @@ try{
     $transactions+=@{tran_number=$number.Trim();item_count=(Int-Or-Null (Get-Field $row @('ITEM_COUNT','ITEMS')));type=[string](Get-Field $row @('TYPE','TRAN_TYPE','TRANSACTION_TYPE'));transaction_date=(Date-Or-Null (Get-Field $row @('DATE','TRAN_DATE','TRANSACTION_DATE')));account_ref=$account.Trim();inv_ref=[string](Get-Field $row @('INV_REF','INVOICE_REF','REFERENCE'));details=[string](Get-Field $row @('DETAILS','DESCRIPTION'));due_date=(Date-Or-Null (Get-Field $row @('DUE_DATE')));net_amount=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT','NET_VALUE','NET')));tax_amount=(Decimal-Or-Zero (Get-Field $row @('TAX_AMOUNT','TAX_VALUE','VAT_AMOUNT','VAT')));gross_amount=$gross;amount_paid=$paid;outstanding=$outstanding;paid_flag=(Int-Or-Null (Get-Field $row @('PAID_FLAG','PAID_STATUS_FLAG')));paid_status=[string](Get-Field $row @('PAID_STATUS','STATUS'));raw=@{tran_number=$number.Trim();account_ref=$account.Trim()}}
   }
   $txRefs=@($transactions|ForEach-Object{$_.tran_number})
-  $txResult=Send-Blueprint $config @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.3-profit';message='Read-only active AUDIT_HEADER transaction sync completed';transactions=$transactions;active_transaction_refs=$txRefs}
+  $txResults=Send-In-Chunks $config $transactions 500 { param($chunk) @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.3-profit';message='Read-only active AUDIT_HEADER transaction chunk synced';transactions=$chunk} }
+  $txCleanupResult=Send-Blueprint $config @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.3-profit';message='Active transaction cleanup completed';transactions=@();active_transaction_refs=$txRefs}
   Write-Host ("Blueprint debtor sync complete: {0} active transactions" -f $transactions.Count) -ForegroundColor Green
 
-  # Gross-profit snapshot: actual invoice-line net sales less quantity x current Sage average cost.
-  # Sage's documented links are INVOICE.INVOICE_NUMBER -> INVOICE_ITEM.INVOICE_NUMBER and INVOICE_ITEM.STOCK_CODE -> STOCK.STOCK_CODE.
   $profitRows=Read-Table $conn "SELECT I.DATE AS INVOICE_DATE, II.NET_AMOUNT, II.QUANTITY, II.STOCK_CODE, S.AVERAGE_COST_PRICE FROM (INVOICE I INNER JOIN INVOICE_ITEM II ON I.INVOICE_NUMBER=II.INVOICE_NUMBER) LEFT JOIN STOCK S ON II.STOCK_CODE=S.STOCK_CODE"
   $daily=@{}
   foreach($row in $profitRows){
@@ -76,6 +83,6 @@ try{
   $profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Office Sage 50';bridge_version='6.3-profit';message='Read-only Sage invoice gross-profit snapshot sync completed';snapshots=$snapshots}
   Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots" -f $snapshots.Count) -ForegroundColor Green
 
-  @{customers=$customerResult;transactions=$txResult;profit=$profitResult}|ConvertTo-Json -Depth 5
+  @{customers=$customerResult;transaction_batches=$txResults.Count;transactions_cleanup=$txCleanupResult;profit=$profitResult}|ConvertTo-Json -Depth 5
 }
 finally{if($conn.State -eq 'Open'){$conn.Close()}}
