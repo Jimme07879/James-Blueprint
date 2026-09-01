@@ -1,0 +1,7 @@
+/* Home review 2026-09-01: remove the duplicated right-hand "What should I do next?" card and give the action queue the full available width. */
+.actionMainGrid{
+  grid-template-columns:minmax(0,1fr) !important;
+}
+.actionMainGrid > .nextActionCard{
+  display:none !important;
+}
