@@ -26,43 +26,45 @@ function hideRemovedNavigation() {
   });
 }
 
+function findMatchingDone(title: string) {
+  const candidates = Array.from(document.querySelectorAll<HTMLElement>(".commandAlert, .todayItem"));
+  const matching = candidates.find((item) => item.querySelector("strong")?.textContent?.trim() === title);
+  if (!matching) return undefined;
+  return Array.from(matching.querySelectorAll<HTMLButtonElement>("button")).find((b) => textOf(b) === "done");
+}
+
 function wireNextActionDone() {
-  const card = document.querySelector<HTMLElement>(".nextActionCard");
-  if (!card) return;
-  const actions = card.querySelector<HTMLElement>(".actions");
-  const title = card.querySelector<HTMLElement>("h2")?.textContent?.trim();
-  if (!actions || !title) return;
+  document.querySelectorAll<HTMLElement>(".nextActionCard").forEach((card) => {
+    const actions = card.querySelector<HTMLElement>(".actions, .nextActionStack");
+    const title = (card.querySelector<HTMLElement>("h1") || card.querySelector<HTMLElement>("h2"))?.textContent?.trim();
+    if (!actions || !title) return;
 
-  addPillButton(actions, "next-done", "Done", (button) => {
-    const queueItems = Array.from(document.querySelectorAll<HTMLElement>(".todayItem"));
-    const matching = queueItems.find((item) => item.querySelector("strong")?.textContent?.trim() === title);
-    const done = matching
-      ? Array.from(matching.querySelectorAll<HTMLButtonElement>("button")).find((b) => textOf(b) === "done")
-      : undefined;
+    addPillButton(actions, "next-done", "Done", (button) => {
+      const done = findMatchingDone(title);
+      if (done) {
+        done.click();
+        button.disabled = true;
+        button.textContent = "Done ✓";
+        return;
+      }
 
-    if (done) {
-      done.click();
+      const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
+      localStorage.setItem(storageKey, "1");
+      card.style.opacity = "0.55";
       button.disabled = true;
       button.textContent = "Done ✓";
-      return;
-    }
+    });
 
     const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
-    localStorage.setItem(storageKey, "1");
-    card.style.opacity = "0.55";
-    button.disabled = true;
-    button.textContent = "Done ✓";
-  });
-
-  const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
-  if (localStorage.getItem(storageKey) === "1") {
-    card.style.opacity = "0.55";
-    const doneButton = card.querySelector<HTMLButtonElement>("[data-blueprint-action='next-done']");
-    if (doneButton) {
-      doneButton.disabled = true;
-      doneButton.textContent = "Done ✓";
+    if (localStorage.getItem(storageKey) === "1") {
+      card.style.opacity = "0.55";
+      const doneButton = card.querySelector<HTMLButtonElement>("[data-blueprint-action='next-done']");
+      if (doneButton) {
+        doneButton.disabled = true;
+        doneButton.textContent = "Done ✓";
+      }
     }
-  }
+  });
 }
 
 function wireBrokenPromisePaid() {
@@ -94,7 +96,7 @@ function wireBrokenPromisePaid() {
           return t === "paid" || t.includes("marked paid") || t.includes("mark paid");
         });
         if (globalPaid && globalPaid !== paid) globalPaid.click();
-      }, 80);
+      }, 120);
     });
     alert.insertAdjacentElement("afterend", paid);
   });
