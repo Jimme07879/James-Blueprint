@@ -4,6 +4,7 @@ import './blueprint-blue.css';
 import type { Metadata } from 'next';
 import HomeDebtorsPanel from './HomeDebtorsPanel';
 import HomeSageSales from './HomeSageSales';
+import HomeSageCosts from './HomeSageCosts';
 import BlueprintTidyPatch from './BlueprintTidyPatch';
 import LiveOverdueInvoices from './LiveOverdueInvoices';
 import ActiveCustomerBookFilter from './ActiveCustomerBookFilter';
@@ -16,7 +17,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}<HomeSageSales /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /></body>
+      <body>{children}<HomeSageSales /><HomeSageCosts /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /></body>
     </html>
   );
 }
