@@ -4,165 +4,99 @@ import { useEffect } from "react";
 
 const HIDE_LABELS = ["proof", "vault", "ceo", "me"];
 
-function normalise(value: string | null | undefined) {
-  return (value || "").trim().toLowerCase();
+function textOf(el: Element | null) {
+  return (el?.textContent || "").trim().toLowerCase();
 }
 
-function clickFirstMatchingAction(card: HTMLElement, labels: string[]) {
-  const buttons = Array.from(
-    card.querySelectorAll<HTMLElement>("button, [role='button'], a")
-  );
-  const match = buttons.find((button) =>
-    labels.some((label) => normalise(button.textContent).includes(label))
-  );
-  match?.click();
-  return Boolean(match);
-}
-
-function addActionButton(
-  row: HTMLElement,
-  text: string,
-  onClick: (button: HTMLButtonElement) => void
-) {
-  if (row.querySelector(`[data-blueprint-action='${text.toLowerCase()}']`)) return;
-
+function addPillButton(container: HTMLElement, key: string, label: string, onClick: (button: HTMLButtonElement) => void) {
+  if (container.querySelector(`[data-blueprint-action='${key}']`)) return;
   const button = document.createElement("button");
   button.type = "button";
-  button.textContent = text;
-  button.dataset.blueprintAction = text.toLowerCase();
-  button.style.marginLeft = "12px";
-  button.style.padding = "7px 12px";
-  button.style.borderRadius = "999px";
-  button.style.border = "1px solid rgba(212,175,55,.5)";
-  button.style.background = "rgba(212,175,55,.12)";
-  button.style.color = "inherit";
-  button.style.fontWeight = "700";
-  button.style.cursor = "pointer";
+  button.textContent = label;
+  button.dataset.blueprintAction = key;
+  button.className = "btn primary";
+  button.style.marginLeft = "8px";
   button.addEventListener("click", () => onClick(button));
-  row.appendChild(button);
+  container.appendChild(button);
 }
 
-function findSectionHeading(label: string) {
-  const headings = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      "h1,h2,h3,h4,h5,h6,[data-section-title],.sectionTitle,.cardTitle"
-    )
-  );
-  return headings.find((el) => normalise(el.textContent) === label);
-}
-
-function closestPanel(el: HTMLElement | null) {
-  return (
-    el?.closest<HTMLElement>(
-      "section, article, .card, .panel, [data-section], [data-page-section]"
-    ) || null
-  );
-}
-
-function hideRemovedSections() {
-  for (const label of HIDE_LABELS) {
-    const heading = findSectionHeading(label);
-    const panel = closestPanel(heading || null);
-    if (panel) panel.style.display = "none";
-  }
-
-  const navItems = Array.from(
-    document.querySelectorAll<HTMLElement>("nav a, nav button, [role='navigation'] a, [role='navigation'] button")
-  );
-  navItems.forEach((item) => {
-    const text = normalise(item.textContent);
-    if (HIDE_LABELS.includes(text)) item.style.display = "none";
+function hideRemovedNavigation() {
+  document.querySelectorAll<HTMLElement>("nav button, nav a").forEach((item) => {
+    if (HIDE_LABELS.includes(textOf(item))) item.style.display = "none";
   });
 }
 
-function addDoneButtonsToToday() {
-  const heading = Array.from(
-    document.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6,.sectionTitle,.cardTitle")
-  ).find((el) => {
-    const text = normalise(el.textContent);
-    return text === "today" || text.includes("what should i do next");
-  });
+function wireNextActionDone() {
+  const card = document.querySelector<HTMLElement>(".nextActionCard");
+  if (!card) return;
+  const actions = card.querySelector<HTMLElement>(".actions");
+  const title = card.querySelector<HTMLElement>("h2")?.textContent?.trim();
+  if (!actions || !title) return;
 
-  const panel = closestPanel(heading || null);
-  if (!panel) return;
+  addPillButton(actions, "next-done", "Done", (button) => {
+    const queueItems = Array.from(document.querySelectorAll<HTMLElement>(".todayItem"));
+    const matching = queueItems.find((item) => item.querySelector("strong")?.textContent?.trim() === title);
+    const done = matching
+      ? Array.from(matching.querySelectorAll<HTMLButtonElement>("button")).find((b) => textOf(b) === "done")
+      : undefined;
 
-  const rows = Array.from(
-    panel.querySelectorAll<HTMLElement>("li, tr, .task, .taskRow, .actionItem, .listItem")
-  ).filter((row) => {
-    const text = normalise(row.textContent);
-    return Boolean(text) && !text.includes("done");
-  });
-
-  rows.forEach((row) => {
-    addActionButton(row, "Done", (button) => {
-      const handled = clickFirstMatchingAction(row, ["complete", "done", "finish"]);
-      if (!handled) {
-        row.dataset.blueprintCompleted = "true";
-        row.style.opacity = "0.5";
-        row.style.textDecoration = "line-through";
-      }
+    if (done) {
+      done.click();
       button.disabled = true;
       button.textContent = "Done ✓";
-    });
-  });
-}
-
-function addPaidButtonsToBrokenPromises() {
-  const heading = Array.from(
-    document.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6,.sectionTitle,.cardTitle")
-  ).find((el) => normalise(el.textContent).includes("broken promise"));
-
-  const panel = closestPanel(heading || null);
-  if (!panel) return;
-
-  const rows = Array.from(
-    panel.querySelectorAll<HTMLElement>("li, tr, .task, .taskRow, .actionItem, .listItem")
-  );
-
-  rows.forEach((row) => {
-    addActionButton(row, "Paid", (button) => {
-      const handled = clickFirstMatchingAction(row, ["paid", "settled", "clear"]);
-      if (!handled) {
-        row.dataset.blueprintPaid = "true";
-        row.style.opacity = "0.55";
-      }
-      button.disabled = true;
-      button.textContent = "Paid ✓";
-    });
-  });
-}
-
-function limitOverdueInvoicesTo50() {
-  const heading = Array.from(
-    document.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6,.sectionTitle,.cardTitle")
-  ).find((el) => normalise(el.textContent).includes("overdue invoice"));
-  const panel = closestPanel(heading || null);
-  if (!panel) return;
-
-  const rows = Array.from(panel.querySelectorAll<HTMLElement>("tbody tr, li, .invoiceRow"));
-  rows.forEach((row, index) => {
-    if (index >= 50) row.style.display = "none";
-  });
-}
-
-function hideInactiveCustomerRows() {
-  const heading = Array.from(
-    document.querySelectorAll<HTMLElement>("h1,h2,h3,h4,h5,h6,.sectionTitle,.cardTitle")
-  ).find((el) => normalise(el.textContent).includes("customer book"));
-  const panel = closestPanel(heading || null);
-  if (!panel) return;
-
-  const rows = Array.from(panel.querySelectorAll<HTMLElement>("tbody tr, li, .customerRow"));
-  rows.forEach((row) => {
-    const text = normalise(row.textContent);
-    if (
-      text.includes("inactive") ||
-      text.includes("closed") ||
-      text.includes("archived") ||
-      text.includes("disabled")
-    ) {
-      row.style.display = "none";
+      return;
     }
+
+    const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
+    localStorage.setItem(storageKey, "1");
+    card.style.opacity = "0.55";
+    button.disabled = true;
+    button.textContent = "Done ✓";
+  });
+
+  const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
+  if (localStorage.getItem(storageKey) === "1") {
+    card.style.opacity = "0.55";
+    const doneButton = card.querySelector<HTMLButtonElement>("[data-blueprint-action='next-done']");
+    if (doneButton) {
+      doneButton.disabled = true;
+      doneButton.textContent = "Done ✓";
+    }
+  }
+}
+
+function wireBrokenPromisePaid() {
+  if (window.location.pathname !== "/debtors") return;
+
+  document.querySelectorAll<HTMLElement>("button").forEach((row) => {
+    const alert = Array.from(row.querySelectorAll<HTMLElement>("small,p")).find((el) => textOf(el).includes("broken promise"));
+    if (!alert || row.dataset.blueprintBrokenPaid === "1") return;
+    row.dataset.blueprintBrokenPaid = "1";
+
+    const paid = document.createElement("button");
+    paid.type = "button";
+    paid.textContent = "Paid";
+    paid.style.marginLeft = "10px";
+    paid.style.padding = "5px 10px";
+    paid.style.borderRadius = "999px";
+    paid.style.border = "1px solid rgba(212,175,55,.55)";
+    paid.style.background = "rgba(212,175,55,.14)";
+    paid.style.fontWeight = "700";
+    paid.style.cursor = "pointer";
+    paid.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      row.click();
+      window.setTimeout(() => {
+        const actionButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
+        const globalPaid = actionButtons.find((b) => {
+          const t = textOf(b);
+          return t === "paid" || t.includes("marked paid") || t.includes("mark paid");
+        });
+        if (globalPaid && globalPaid !== paid) globalPaid.click();
+      }, 80);
+    });
+    alert.insertAdjacentElement("afterend", paid);
   });
 }
 
@@ -171,27 +105,23 @@ export default function BlueprintTidyPatch() {
     let scheduled = false;
     const apply = () => {
       scheduled = false;
-      hideRemovedSections();
-      addDoneButtonsToToday();
-      addPaidButtonsToBrokenPromises();
-      limitOverdueInvoicesTo50();
-      hideInactiveCustomerRows();
+      hideRemovedNavigation();
+      wireNextActionDone();
+      wireBrokenPromisePaid();
     };
-
-    const scheduleApply = () => {
+    const schedule = () => {
       if (scheduled) return;
       scheduled = true;
-      window.requestAnimationFrame(apply);
+      requestAnimationFrame(apply);
     };
 
     apply();
-    const observer = new MutationObserver(scheduleApply);
+    const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
-    window.addEventListener("focus", scheduleApply);
-
+    window.addEventListener("focus", schedule);
     return () => {
       observer.disconnect();
-      window.removeEventListener("focus", scheduleApply);
+      window.removeEventListener("focus", schedule);
     };
   }, []);
 
