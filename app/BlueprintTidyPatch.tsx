@@ -8,73 +8,46 @@ function textOf(el: Element | null) {
   return (el?.textContent || "").trim().toLowerCase();
 }
 
-function addPillButton(container: HTMLElement, key: string, label: string, onClick: (button: HTMLButtonElement) => void) {
-  if (container.querySelector(`[data-blueprint-action='${key}']`)) return;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.textContent = label;
-  button.dataset.blueprintAction = key;
-  button.className = "btn primary";
-  button.style.marginLeft = "8px";
-  button.addEventListener("click", () => onClick(button));
-  container.appendChild(button);
-}
-
 function hideRemovedNavigation() {
   document.querySelectorAll<HTMLElement>("nav button, nav a").forEach((item) => {
     if (HIDE_LABELS.includes(textOf(item))) item.style.display = "none";
   });
 }
 
-function findMatchingDone(title: string) {
-  const candidates = Array.from(document.querySelectorAll<HTMLElement>(".commandAlert, .todayItem"));
-  const matching = candidates.find((item) => item.querySelector("strong")?.textContent?.trim() === title);
-  if (!matching) return undefined;
-  return Array.from(matching.querySelectorAll<HTMLButtonElement>("button")).find((b) => textOf(b) === "done");
-}
+function wireDailyPriorityDone() {
+  if (window.location.pathname !== "/") return;
+  document.querySelectorAll<HTMLElement>(".todayItem").forEach((row) => {
+    const detail = Array.from(row.querySelectorAll<HTMLElement>(".muted.small"))
+      .find((el) => textOf(el).startsWith("daily") && textOf(el).includes("daily priority"));
+    if (!detail || row.dataset.dailyDoneWired === "1") return;
+    row.dataset.dailyDoneWired = "1";
 
-function wireNextActionDone() {
-  document.querySelectorAll<HTMLElement>(".nextActionCard").forEach((card) => {
-    const actions = card.querySelector<HTMLElement>(".actions, .nextActionStack");
-    const title = (card.querySelector<HTMLElement>("h1") || card.querySelector<HTMLElement>("h2"))?.textContent?.trim();
+    const actions = row.querySelector<HTMLElement>(".todayActions");
+    const title = row.querySelector<HTMLElement>("strong")?.textContent?.trim();
     if (!actions || !title) return;
 
-    addPillButton(actions, "next-done", "Done", (button) => {
-      const done = findMatchingDone(title);
-      if (done) {
-        done.click();
-        button.disabled = true;
-        button.textContent = "Done ✓";
-        return;
-      }
-
-      const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
-      localStorage.setItem(storageKey, "1");
-      card.style.opacity = "0.55";
-      button.disabled = true;
-      button.textContent = "Done ✓";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn primary";
+    button.textContent = "Done";
+    button.addEventListener("click", () => {
+      const key = `blueprint-daily-priority-done:${new Date().toISOString().slice(0,10)}:${title}`;
+      localStorage.setItem(key, "1");
+      row.remove();
     });
+    actions.prepend(button);
 
-    const storageKey = `blueprint-done:${new Date().toISOString().slice(0, 10)}:${title}`;
-    if (localStorage.getItem(storageKey) === "1") {
-      card.style.opacity = "0.55";
-      const doneButton = card.querySelector<HTMLButtonElement>("[data-blueprint-action='next-done']");
-      if (doneButton) {
-        doneButton.disabled = true;
-        doneButton.textContent = "Done ✓";
-      }
-    }
+    const key = `blueprint-daily-priority-done:${new Date().toISOString().slice(0,10)}:${title}`;
+    if (localStorage.getItem(key) === "1") row.remove();
   });
 }
 
 function wireBrokenPromisePaid() {
   if (window.location.pathname !== "/debtors") return;
-
   document.querySelectorAll<HTMLElement>("button").forEach((row) => {
     const alert = Array.from(row.querySelectorAll<HTMLElement>("small,p")).find((el) => textOf(el).includes("broken promise"));
     if (!alert || row.dataset.blueprintBrokenPaid === "1") return;
     row.dataset.blueprintBrokenPaid = "1";
-
     const paid = document.createElement("button");
     paid.type = "button";
     paid.textContent = "Paid";
@@ -86,16 +59,12 @@ function wireBrokenPromisePaid() {
     paid.style.fontWeight = "700";
     paid.style.cursor = "pointer";
     paid.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      row.click();
+      event.preventDefault(); event.stopPropagation(); row.click();
       window.setTimeout(() => {
-        const actionButtons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"));
-        const globalPaid = actionButtons.find((b) => {
-          const t = textOf(b);
-          return t === "paid" || t.includes("marked paid") || t.includes("mark paid");
+        const globalPaid = Array.from(document.querySelectorAll<HTMLButtonElement>("button")).find((b) => {
+          const t = textOf(b); return b !== paid && (t === "paid" || t.includes("marked paid") || t.includes("mark paid"));
         });
-        if (globalPaid && globalPaid !== paid) globalPaid.click();
+        globalPaid?.click();
       }, 120);
     });
     alert.insertAdjacentElement("afterend", paid);
@@ -105,27 +74,13 @@ function wireBrokenPromisePaid() {
 export default function BlueprintTidyPatch() {
   useEffect(() => {
     let scheduled = false;
-    const apply = () => {
-      scheduled = false;
-      hideRemovedNavigation();
-      wireNextActionDone();
-      wireBrokenPromisePaid();
-    };
-    const schedule = () => {
-      if (scheduled) return;
-      scheduled = true;
-      requestAnimationFrame(apply);
-    };
-
+    const apply = () => { scheduled = false; hideRemovedNavigation(); wireDailyPriorityDone(); wireBrokenPromisePaid(); };
+    const schedule = () => { if (scheduled) return; scheduled = true; requestAnimationFrame(apply); };
     apply();
     const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("focus", schedule);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("focus", schedule);
-    };
+    return () => { observer.disconnect(); window.removeEventListener("focus", schedule); };
   }, []);
-
   return null;
 }
