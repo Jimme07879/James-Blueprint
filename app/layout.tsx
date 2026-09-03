@@ -6,6 +6,7 @@ import HomeDebtorsPanel from './HomeDebtorsPanel';
 import HomeSageSales from './HomeSageSales';
 import BlueprintTidyPatch from './BlueprintTidyPatch';
 import LiveOverdueInvoices from './LiveOverdueInvoices';
+import ActiveCustomerBookFilter from './ActiveCustomerBookFilter';
 
 export const metadata: Metadata = {
   title: 'Blueprint OS',
@@ -15,7 +16,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}<HomeSageSales /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /></body>
+      <body>{children}<HomeSageSales /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /></body>
     </html>
   );
 }
