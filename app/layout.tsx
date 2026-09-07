@@ -9,6 +9,7 @@ import BlueprintTidyPatch from './BlueprintTidyPatch';
 import LiveOverdueInvoices from './LiveOverdueInvoices';
 import ActiveCustomerBookFilter from './ActiveCustomerBookFilter';
 import LiveFinanceCustomerTabs from './LiveFinanceCustomers';
+import StevieIntelligenceLayer from './StevieIntelligenceLayer';
 
 export const metadata: Metadata = {
   title: 'Blueprint OS',
@@ -18,7 +19,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}<HomeSageSales /><HomeSageCosts /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /><LiveFinanceCustomerTabs /></body>
+      <body>{children}<HomeSageSales /><HomeSageCosts /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /><LiveFinanceCustomerTabs /><StevieIntelligenceLayer /></body>
     </html>
   );
 }
