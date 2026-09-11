@@ -65,6 +65,7 @@ export default function DebtorsPage(){
   const{data:saved,error}=await supabase.from('debtor_collection_actions').insert(payload).select('id,account_ref,action_type,note,promised_amount,follow_up_date,balance_at_action,contacted_at').single();
   setSaving(false);
   if(error){alert(`Could not save ${actionLabel(action_type).toLowerCase()}: ${error.message}`);return}
+  setSelected(selectedCustomer.account_ref);
   setActions(current=>[saved as CollectionAction,...current.filter(a=>a.id!==(saved as CollectionAction).id)]);
   setNote('');setPromise('');setFollowUp('');
   setSaveMessage(action_type==='paid'?'✓ Payment marked as paid. The outstanding balance will change when the payment is posted in Sage.':'✓ Action saved.')
