@@ -5,6 +5,7 @@ import type { Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { connectMicrosoft, disconnectMicrosoft, getMicrosoftAccount, getInboxMessages, type OutlookMessage } from '../lib/microsoft';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
+import DisciplineCentre, { DisciplineReminder } from './DisciplineCentre';
 
 type DailyEntry = {
   id?: string; entry_date: string; sleep_hours?: number|null; sleep_quality?: number|null;
@@ -72,7 +73,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Discipline','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -248,6 +249,7 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='Customers'&&<CustomerIntelligence session={session} rows={financialRows} leads={leads} emailSummary={emailSummary} reload={loadAll} setTab={setTab}/>} 
       {tab==='Sage Live'&&<SageLive session={session} customers={sageCustomers} status={sageBridgeStatus} reload={loadAll}/>} 
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} emailSummary={emailSummary} setTab={setTab}/>}
+      {tab==='Discipline'&&<DisciplineCentre userId={session.user.id}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
       {tab==='Decisions'&&<DecisionJournal session={session} items={decisionItems} reload={loadAll}/>}
@@ -261,6 +263,7 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='Business Hub'&&<Business session={session} value={business} reload={loadAll}/>}
       {tab==='Settings'&&<Vision session={session} settings={settings} reload={loadAll}/>}
     </main>
+    <DisciplineReminder userId={session.user.id} openDiscipline={()=>setTab('Discipline')}/>
   </div>
 }
 
