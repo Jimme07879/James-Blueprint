@@ -64,6 +64,27 @@ const colours = {
   proof: {main:'#167257',soft:'#eef9f4',line:'#a9d8c7'}
 };
 
+const morningMindset = [
+  {title:'Back yourself',copy:'Believe you are capable before waiting for somebody else to validate you.'},
+  {title:'Look for a way',copy:'Replace “I can’t” with the next possible step you can actually take.'},
+  {title:'Keep sight of the future',copy:'A difficult day is your current position—not your final destination.'},
+  {title:'Improve, don’t perfect',copy:'Aim to finish today slightly stronger, wiser or more consistent than yesterday.'},
+  {title:'Do the work',copy:'Confidence grows when effort is repeated, especially when the mood is missing.'},
+  {title:'Own the response',copy:'Your circumstances are real; your next response is still yours to choose.'},
+  {title:'Remember the purpose',copy:'Hard work becomes easier to carry when you keep who and what it is for in view.'},
+  {title:'Filter opinions',copy:'Listen to useful feedback. Do not hand your direction to somebody else’s doubt.'},
+  {title:'Value the life around the work',copy:'Goals matter, but so do your health, your relationships and the moments you cannot get back.'}
+];
+
+const stayInMotion = [
+  {title:'Action before motivation',copy:'Do not wait to feel ready. Start for five minutes and let movement create the feeling.'},
+  {title:'Set a minimum day',copy:'On a hard day, keep one small promise. Reduced effort still protects the identity you are building.'},
+  {title:'Make the next move obvious',copy:'Choose tomorrow’s first action tonight so tiredness cannot turn into negotiation.'},
+  {title:'Count visible proof',copy:'Judge change by completed actions, not intentions, guilt or one emotional day.'},
+  {title:'Recover at the next opportunity',copy:'A missed action is information. Correct it quickly instead of using one miss to abandon the day.'},
+  {title:'Protect the engine',copy:'Sleep, food, movement and proper pauses support discipline. Exhaustion is a condition to manage, not a moral failure.'}
+];
+
 export default function DisciplineCentre({userId}:{userId:string}) {
   const [items,setItems]=useState<DisciplineItem[]>(blankItems);
   const [failures,setFailures]=useState<Failure[]>([]);
@@ -203,6 +224,31 @@ export default function DisciplineCentre({userId}:{userId:string}) {
       <DisciplineBox title="3. Proof" subtitle="What action proves who you are becoming?" kind="proof" values={section('proof')} setItem={setItem}/>
     </div>
     <button style={s.primary} disabled={saving==='triangle'} onClick={saveTriangle}>{saving==='triangle'?'Saving…':'Save discipline triangle'}</button>
+
+    <section style={{...s.card,marginTop:22}}>
+      <div style={s.eyebrow}>MORNING MINDSET</div>
+      <h2 style={{marginBottom:4}}>Nine reminders, made practical</h2>
+      <p style={s.muted}>Use these to set your direction—not to pretend everything is easy. Belief matters most when it changes the next action.</p>
+      <div style={s.mindsetGrid}>
+        {morningMindset.map((item,index)=><article key={item.title} style={s.mindsetItem}>
+          <span style={s.mindsetNumber}>{index+1}</span>
+          <div><strong>{item.title}</strong><p style={s.mindsetCopy}>{item.copy}</p></div>
+        </article>)}
+      </div>
+    </section>
+
+    <section style={{...s.motionCard,marginTop:18}}>
+      <div style={s.eyebrow}>STAY IN MOTION</div>
+      <h2 style={{marginBottom:4}}>When motivation disappears</h2>
+      <p style={{...s.muted,maxWidth:780}}>Motivation starts change; structure keeps it going. Use these rules when the day is heavy or your mind starts negotiating.</p>
+      <div style={s.motionGrid}>
+        {stayInMotion.map(item=><article key={item.title} style={s.motionItem}>
+          <strong>{item.title}</strong>
+          <p style={s.mindsetCopy}>{item.copy}</p>
+        </article>)}
+      </div>
+      <div style={s.resetLine}><strong>Today’s reset:</strong> What is the smallest action I can complete now that would count as proof?</div>
+    </section>
 
     <section id="end-of-day-record" style={{...s.card,marginTop:22}}>
       <div style={s.historyHeader}><div><div style={s.eyebrow}>END-OF-DAY RECORD</div><h2 style={{marginBottom:4}}>Judge the day by your actions</h2><p style={s.muted}>Record the proof, learn from the miss, and decide tomorrow's first correction.</p></div><label style={{...s.label,minWidth:160}}>Date<input style={s.input} type="date" value={dayRecord.record_date} max={today()} onChange={e=>chooseRecordDate(e.target.value)}/></label></div>
@@ -348,6 +394,14 @@ const s:Record<string,React.CSSProperties>={
   proofCheck:{display:'grid',gridTemplateColumns:'22px 1fr',gap:10,alignItems:'start',padding:13,border:'1px solid #d8d8d0',borderRadius:11,background:'#fafaf7',cursor:'pointer'},
   proofCheckDone:{borderColor:'#7fc4aa',background:'#eef9f4'},
   card:{background:'#fff',border:'1px solid #e1ded6',borderRadius:16,padding:20,boxShadow:'0 4px 18px rgba(35,45,42,.05)'},
+  mindsetGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:10,marginTop:18},
+  mindsetItem:{display:'grid',gridTemplateColumns:'32px 1fr',gap:10,alignItems:'start',padding:14,border:'1px solid #e1ded6',borderRadius:12,background:'#fafaf7'},
+  mindsetNumber:{display:'flex',alignItems:'center',justifyContent:'center',width:28,height:28,borderRadius:999,background:'#213c36',color:'#fff',fontSize:12,fontWeight:900},
+  mindsetCopy:{margin:'5px 0 0',color:'#687773',fontSize:13,lineHeight:1.45},
+  motionCard:{background:'linear-gradient(135deg,#fffaf0,#f5fbf8)',border:'1px solid #ddd4b8',borderRadius:16,padding:20,boxShadow:'0 4px 18px rgba(35,45,42,.05)'},
+  motionGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(250px,1fr))',gap:10,marginTop:18},
+  motionItem:{padding:14,borderLeft:'4px solid #c39a3b',borderRadius:10,background:'rgba(255,255,255,.82)'},
+  resetLine:{marginTop:16,padding:'13px 15px',borderRadius:10,background:'#213c36',color:'#fff',lineHeight:1.45},
   disciplineBox:{border:'1px solid',borderRadius:16,padding:18},
   boxNumber:{display:'inline-block',color:'#fff',fontWeight:800,padding:'7px 11px',borderRadius:999},
   boxSubtitle:{minHeight:40,color:'#56635f',fontSize:13,lineHeight:1.4},
