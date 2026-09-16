@@ -28,11 +28,35 @@ type ReminderSettings = {
   last_reminded_on?: string|null;
 };
 
+type DayRecord = {
+  id?: string;
+  record_date: string;
+  proof_1_completed: boolean;
+  proof_2_completed: boolean;
+  proof_3_completed: boolean;
+  win?: string|null;
+  fell_short?: string|null;
+  lesson?: string|null;
+  tomorrow_action?: string|null;
+  created_at?: string;
+  updated_at?: string;
+};
+
 const today = () => new Date().toISOString().slice(0,10);
 const blankItems = ():DisciplineItem[] =>
   (['pain','purpose','proof'] as const).flatMap(kind =>
     [1,2,3].map(position => ({kind,position,content:''}))
   );
+const blankDayRecord = (record_date=today()):DayRecord => ({
+  record_date,
+  proof_1_completed:false,
+  proof_2_completed:false,
+  proof_3_completed:false,
+  win:'',
+  fell_short:'',
+  lesson:'',
+  tomorrow_action:''
+});
 
 const colours = {
   pain: {main:'#9f3f3f',soft:'#fff3f3',line:'#e4b6b6'},
@@ -43,22 +67,28 @@ const colours = {
 export default function DisciplineCentre({userId}:{userId:string}) {
   const [items,setItems]=useState<DisciplineItem[]>(blankItems);
   const [failures,setFailures]=useState<Failure[]>([]);
+  const [dayRecords,setDayRecords]=useState<DayRecord[]>([]);
+  const [dayRecord,setDayRecord]=useState<DayRecord>(blankDayRecord);
   const [settings,setSettings]=useState<ReminderSettings>({reminder_enabled:false,reminder_time:'07:00'});
   const [failure,setFailure]=useState<any>({failure_date:today(),title:'',what_happened:'',trigger:'',correction:'',lesson:''});
   const [saving,setSaving]=useState('');
   const [message,setMessage]=useState('');
 
   const load=async()=>{
-    const [{data:i,error:ie},{data:f,error:fe},{data:s,error:se}]=await Promise.all([
+    const [{data:i,error:ie},{data:f,error:fe},{data:s,error:se},{data:r,error:re}]=await Promise.all([
       supabase.from('discipline_items').select('id,kind,position,content').order('kind').order('position'),
       supabase.from('discipline_failures').select('*').order('failure_date',{ascending:false}).order('created_at',{ascending:false}),
-      supabase.from('discipline_settings').select('*').maybeSingle()
+      supabase.from('discipline_settings').select('*').maybeSingle(),
+      supabase.from('discipline_day_records').select('*').order('record_date',{ascending:false}).limit(60)
     ]);
-    const error=ie||fe||se;
+    const error=ie||fe||se||re;
     if(error){setMessage(error.message);return}
     const saved=(i||[]) as DisciplineItem[];
     setItems(blankItems().map(base=>saved.find(x=>x.kind===base.kind&&x.position===base.position)||base));
     setFailures((f||[]) as Failure[]);
+    const records=(r||[]) as DayRecord[];
+    setDayRecords(records);
+    setDayRecord(current=>records.find(row=>row.record_date===current.record_date)||current);
     if(s)setSettings({reminder_enabled:!!s.reminder_enabled,reminder_time:String(s.reminder_time||'07:00').slice(0,5),last_reminded_on:s.last_reminded_on});
   };
   useEffect(()=>{load()},[]);
@@ -110,6 +140,32 @@ export default function DisciplineCentre({userId}:{userId:string}) {
     }
   };
 
+  const chooseRecordDate=(record_date:string)=>{
+    setDayRecord(dayRecords.find(row=>row.record_date===record_date)||blankDayRecord(record_date));
+  };
+
+  const saveDayRecord=async()=>{
+    const hasReflection=[dayRecord.win,dayRecord.fell_short,dayRecord.lesson,dayRecord.tomorrow_action].some(value=>String(value||'').trim());
+    const hasProof=dayRecord.proof_1_completed||dayRecord.proof_2_completed||dayRecord.proof_3_completed;
+    if(!hasReflection&&!hasProof){setMessage('Add at least one reflection or completed proof first.');return}
+    setSaving('day-record');setMessage('');
+    const {error}=await supabase.from('discipline_day_records').upsert({
+      user_id:userId,
+      record_date:dayRecord.record_date,
+      proof_1_completed:dayRecord.proof_1_completed,
+      proof_2_completed:dayRecord.proof_2_completed,
+      proof_3_completed:dayRecord.proof_3_completed,
+      win:String(dayRecord.win||'').trim()||null,
+      fell_short:String(dayRecord.fell_short||'').trim()||null,
+      lesson:String(dayRecord.lesson||'').trim()||null,
+      tomorrow_action:String(dayRecord.tomorrow_action||'').trim()||null,
+      updated_at:new Date().toISOString()
+    },{onConflict:'user_id,record_date'});
+    setSaving('');
+    if(error)setMessage(error.message);
+    else{setMessage('End-of-day record saved.');load()}
+  };
+
   const toggleRecovered=async(row:Failure)=>{
     const {error}=await supabase.from('discipline_failures').update({recovered:!row.recovered}).eq('id',row.id);
     if(error)setMessage(error.message);else load();
@@ -147,6 +203,45 @@ export default function DisciplineCentre({userId}:{userId:string}) {
       <DisciplineBox title="3. Proof" subtitle="What action proves who you are becoming?" kind="proof" values={section('proof')} setItem={setItem}/>
     </div>
     <button style={s.primary} disabled={saving==='triangle'} onClick={saveTriangle}>{saving==='triangle'?'Saving…':'Save discipline triangle'}</button>
+
+    <section id="end-of-day-record" style={{...s.card,marginTop:22}}>
+      <div style={s.historyHeader}><div><div style={s.eyebrow}>END-OF-DAY RECORD</div><h2 style={{marginBottom:4}}>Judge the day by your actions</h2><p style={s.muted}>Record the proof, learn from the miss, and decide tomorrow's first correction.</p></div><label style={{...s.label,minWidth:160}}>Date<input style={s.input} type="date" value={dayRecord.record_date} max={today()} onChange={e=>chooseRecordDate(e.target.value)}/></label></div>
+
+      <div style={s.proofChecklist}>
+        {section('proof').map((proof,index)=>{
+          const key=`proof_${index+1}_completed` as 'proof_1_completed'|'proof_2_completed'|'proof_3_completed';
+          return <label key={proof.position} style={{...s.proofCheck,...(dayRecord[key]?s.proofCheckDone:{})}}>
+            <input type="checkbox" checked={dayRecord[key]} onChange={e=>setDayRecord({...dayRecord,[key]:e.target.checked})}/>
+            <span><strong>Proof {proof.position}</strong><small style={{display:'block',marginTop:4,fontWeight:500,lineHeight:1.35}}>{proof.content.trim()||'Add this proof to your triangle above.'}</small></span>
+          </label>
+        })}
+      </div>
+
+      <div style={s.reflectionGrid}>
+        <label style={s.label}>What did I do well?<textarea style={s.textarea} value={dayRecord.win||''} onChange={e=>setDayRecord({...dayRecord,win:e.target.value})} placeholder="The promise I kept or action I took…"/></label>
+        <label style={s.label}>Where did I fall short?<textarea style={s.textarea} value={dayRecord.fell_short||''} onChange={e=>setDayRecord({...dayRecord,fell_short:e.target.value})} placeholder="Be honest and specific—without attacking yourself."/></label>
+        <label style={s.label}>What did today teach me?<textarea style={s.textarea} value={dayRecord.lesson||''} onChange={e=>setDayRecord({...dayRecord,lesson:e.target.value})} placeholder="The pattern, trigger or lesson I noticed…"/></label>
+        <label style={s.label}>Tomorrow's first corrective action<textarea style={s.textarea} value={dayRecord.tomorrow_action||''} onChange={e=>setDayRecord({...dayRecord,tomorrow_action:e.target.value})} placeholder="One specific action I will take first…"/></label>
+      </div>
+      <button style={s.primary} disabled={saving==='day-record'} onClick={saveDayRecord}>{saving==='day-record'?'Saving…':'Save end-of-day record'}</button>
+    </section>
+
+    <section style={{...s.card,marginTop:18}}>
+      <div style={s.historyHeader}><div><div style={s.eyebrow}>END-OF-DAY HISTORY</div><h2 style={{marginBottom:4}}>Proof over perfection</h2></div><div style={s.failureCount}>{dayRecords.length} days recorded</div></div>
+      <div style={s.history}>
+        {dayRecords.map(row=>{
+          const proofCount=[row.proof_1_completed,row.proof_2_completed,row.proof_3_completed].filter(Boolean).length;
+          return <article key={row.id||row.record_date} style={s.dayRow}>
+            <div style={s.failureTop}><div><strong>{new Date(row.record_date+'T12:00:00').toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'short'})}</strong><div style={s.small}>{row.tomorrow_action?'Next: '+row.tomorrow_action:'Open to review or update this day'}</div></div><span style={proofCount===3?s.recoveredBadge:s.openBadge}>{proofCount}/3 proofs</span></div>
+            {row.win&&<p><strong>Win:</strong> {row.win}</p>}
+            {row.fell_short&&<p><strong>Fell short:</strong> {row.fell_short}</p>}
+            {row.lesson&&<p><strong>Lesson:</strong> {row.lesson}</p>}
+            <button style={s.button} onClick={()=>{setDayRecord(row);document.getElementById('end-of-day-record')?.scrollIntoView({behavior:'smooth',block:'start'})}}>Review or update</button>
+          </article>
+        })}
+        {!dayRecords.length&&<div style={s.empty}>No end-of-day records yet. Complete today's check-in before you finish.</div>}
+      </div>
+    </section>
 
     <div style={s.twoColumns}>
       <section style={s.card}>
@@ -248,6 +343,10 @@ const s:Record<string,React.CSSProperties>={
   painTriangle:{width:'100%',background:'#9f3f3f',clipPath:'polygon(15% 0,85% 0,100% 100%,0 100%)'},
   threeColumns:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:16,margin:'20px 0'},
   twoColumns:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(320px,1fr))',gap:18,marginTop:22},
+  reflectionGrid:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:'4px 16px',marginTop:10},
+  proofChecklist:{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(240px,1fr))',gap:10,margin:'18px 0 8px'},
+  proofCheck:{display:'grid',gridTemplateColumns:'22px 1fr',gap:10,alignItems:'start',padding:13,border:'1px solid #d8d8d0',borderRadius:11,background:'#fafaf7',cursor:'pointer'},
+  proofCheckDone:{borderColor:'#7fc4aa',background:'#eef9f4'},
   card:{background:'#fff',border:'1px solid #e1ded6',borderRadius:16,padding:20,boxShadow:'0 4px 18px rgba(35,45,42,.05)'},
   disciplineBox:{border:'1px solid',borderRadius:16,padding:18},
   boxNumber:{display:'inline-block',color:'#fff',fontWeight:800,padding:'7px 11px',borderRadius:999},
@@ -266,6 +365,7 @@ const s:Record<string,React.CSSProperties>={
   failureCount:{padding:'8px 12px',borderRadius:999,background:'#f3f1eb',fontWeight:800,fontSize:12},
   history:{display:'grid',gap:12,marginTop:18},
   failureRow:{padding:16,border:'1px solid #ead5a5',borderLeft:'5px solid #9a6a1f',borderRadius:12,background:'#fffdfa'},
+  dayRow:{width:'100%',boxSizing:'border-box',padding:16,border:'1px solid #d8e5df',borderLeft:'5px solid #167257',borderRadius:12,background:'#f9fcfa',color:'#1d2b2a'},
   recovered:{borderColor:'#b9dfca',borderLeftColor:'#167257',background:'#f5fbf8'},
   failureTop:{display:'flex',justifyContent:'space-between',gap:10,alignItems:'flex-start'},
   openBadge:{padding:'5px 8px',borderRadius:999,background:'#fff1d2',color:'#7a561e',fontSize:11,fontWeight:800},
