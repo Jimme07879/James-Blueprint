@@ -88,7 +88,7 @@ export default function HomeSageCosts(){
       <span>28-day running costs · Sage</span>
       <strong>{data.loading?'—':money(data.cost28)}</strong>
       <small className={costTrend!=null&&costTrend>0?'pulseBad':'pulseGood'}>{data.error?'Sage costs unavailable':costTrend==null?'Management cost basis':`${costTrend>=0?'+':''}${costTrend.toFixed(1)}% vs previous 28`}</small>
-      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Staff {money(data.staff28)} · Premises {money(data.premises28)} · Vehicles {money(data.vehicle28)}</small>}
+      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Staff {money(data.staff28)} · Premises (rent + electricity) {money(data.premises28)} · Vehicles {money(data.vehicle28)}</small>}
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Rent {money(data.rent28)} + electricity {money(data.electric28)} smoothed from trailing 12 months.</small>}
     </>,costHost)}
     {netHost&&createPortal(<>
