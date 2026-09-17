@@ -45,9 +45,11 @@ $profitRows=Read-Table $conn $profitSql;$daily=@{};foreach($row in $profitRows){
 $costFromDate=$financialYearStart.ToString('yyyy-MM-dd')
 $annualFromDate=(Get-Date).Date.AddDays(-364).ToString('yyyy-MM-dd')
 $costRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '7000' AND NOMINAL_CODE < '9000'"
-$annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND (NOMINAL_CODE='7100' OR NOMINAL_CODE='7200')"
-$annualRent=[decimal]0;$annualElectricity=[decimal]0
-foreach($row in $annualRows){$code=[string](Get-Field $row @('NOMINAL_CODE'));$value=Normalized-Cost ([string](Get-Field $row @('TYPE'))) (Get-Field $row @('NET_AMOUNT'));if($code-eq'7100'){$annualRent+=$value}elseif($code-eq'7200'){$annualElectricity+=$value}}
+$annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND NOMINAL_CODE='7200'"
+# Rent uses the current agreed monthly charge rather than a trailing-12-month average that included the older rate.
+$monthlyRent=if($null-ne$config.MonthlyRent -and (Decimal-Or-Zero $config.MonthlyRent)-gt0){Decimal-Or-Zero $config.MonthlyRent}else{[decimal]2448}
+$annualRent=$monthlyRent*[decimal]12;$annualElectricity=[decimal]0
+foreach($row in $annualRows){$value=Normalized-Cost ([string](Get-Field $row @('TYPE'))) (Get-Field $row @('NET_AMOUNT'));$annualElectricity+=$value}
 $dailyRent=$annualRent/[decimal]365;$dailyElectricity=$annualElectricity/[decimal]365
 $costDaily=@{}
 $startDate=$financialYearStart;$endDate=(Get-Date).Date
@@ -66,8 +68,8 @@ foreach($row in $costRows){
   else{$costDaily[$date].admin+=$value}
   $costDaily[$date].lines++
 }
-$costSnapshots=@();foreach($date in $costDaily.Keys){$staff=[decimal]$costDaily[$date].staff;$prem=[decimal]$costDaily[$date].premises+$dailyRent+$dailyElectricity;$vehicle=[decimal]$costDaily[$date].vehicle;$admin=[decimal]$costDaily[$date].admin;$finance=[decimal]$costDaily[$date].finance;$total=$staff+$prem+$vehicle+$admin+$finance;$costSnapshots+=@{snapshot_date=$date;running_costs=[math]::Round($total,2);staff_costs=[math]::Round($staff,2);premises_costs=[math]::Round($prem,2);vehicle_costs=[math]::Round($vehicle,2);admin_costs=[math]::Round($admin,2);finance_costs=[math]::Round($finance,2);rent_accrual=[math]::Round($dailyRent,2);electricity_accrual=[math]::Round($dailyElectricity,2);line_count=$costDaily[$date].lines;cost_basis='Actual Sage nominal movements; rent/electricity smoothed from trailing 365 days; interest/depreciation excluded'}}
-$costResult=Send-Blueprint $config @{kind='running_cost_snapshots';bridge_name='Office Sage 50';bridge_version='6.7-financial-year';message='Read-only Sage financial-year management running-cost snapshot sync completed';snapshots=$costSnapshots};Write-Host ("Blueprint running cost sync complete: {0} daily snapshots | annual rent {1:N2} | annual electricity {2:N2}" -f $costSnapshots.Count,$annualRent,$annualElectricity) -ForegroundColor Green
+$costSnapshots=@();foreach($date in $costDaily.Keys){$staff=[decimal]$costDaily[$date].staff;$prem=[decimal]$costDaily[$date].premises+$dailyRent+$dailyElectricity;$vehicle=[decimal]$costDaily[$date].vehicle;$admin=[decimal]$costDaily[$date].admin;$finance=[decimal]$costDaily[$date].finance;$total=$staff+$prem+$vehicle+$admin+$finance;$costSnapshots+=@{snapshot_date=$date;running_costs=[math]::Round($total,2);staff_costs=[math]::Round($staff,2);premises_costs=[math]::Round($prem,2);vehicle_costs=[math]::Round($vehicle,2);admin_costs=[math]::Round($admin,2);finance_costs=[math]::Round($finance,2);rent_accrual=[math]::Round($dailyRent,2);electricity_accrual=[math]::Round($dailyElectricity,2);line_count=$costDaily[$date].lines;cost_basis='Actual Sage nominal movements; rent at current monthly charge; electricity smoothed from trailing 365 days; interest/depreciation excluded'}}
+$costResult=Send-Blueprint $config @{kind='running_cost_snapshots';bridge_name='Office Sage 50';bridge_version='6.8-current-rent';message='Read-only Sage financial-year management running-cost snapshot sync completed';snapshots=$costSnapshots};Write-Host ("Blueprint running cost sync complete: {0} daily snapshots | monthly rent {1:N2} | annual electricity {2:N2}" -f $costSnapshots.Count,$monthlyRent,$annualElectricity) -ForegroundColor Green
 
 @{customers=$customerResult;transaction_batches=$txResults.Count;transactions_cleanup=$txCleanupResult;profit=$profitResult;running_costs=$costResult}|ConvertTo-Json -Depth 5
 }finally{if($conn.State-eq'Open'){$conn.Close()}}
