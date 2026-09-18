@@ -65,7 +65,7 @@ const colours = {
 };
 
 const morningMindset = [
-  {title:'I Will Win',copy:'Believe you are capable before waiting for somebody else to validate you.'},
+  {title:'I Will win',copy:'Believe you are capable before waiting for somebody else to validate you.'},
   {title:'Look for a way',copy:'Replace “I can’t” with the next possible step you can actually take.'},
   {title:'Keep sight of the future',copy:'A difficult day is your current position—not your final destination.'},
   {title:'Improve, don’t perfect',copy:'Aim to finish today slightly stronger, wiser or more consistent than yesterday.'},
