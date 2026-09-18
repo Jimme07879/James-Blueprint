@@ -11,6 +11,7 @@ import ActiveCustomerBookFilter from './ActiveCustomerBookFilter';
 import LiveFinanceCustomerTabs from './LiveFinanceCustomers';
 import StevieIntelligenceLayer from './StevieIntelligenceLayer';
 import CostIntelligenceLayer from './CostIntelligenceLayer';
+import SageCostDrilldown from './SageCostDrilldown';
 import DailyCommandLayer from './DailyCommandLayer';
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}<HomeSageSales /><HomeSageCosts /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /><LiveFinanceCustomerTabs /><StevieIntelligenceLayer /><CostIntelligenceLayer /><DailyCommandLayer /></body>
+      <body>{children}<HomeSageSales /><HomeSageCosts /><HomeDebtorsPanel /><BlueprintTidyPatch /><LiveOverdueInvoices /><ActiveCustomerBookFilter /><LiveFinanceCustomerTabs /><StevieIntelligenceLayer /><CostIntelligenceLayer /><SageCostDrilldown /><DailyCommandLayer /></body>
     </html>
   );
 }
