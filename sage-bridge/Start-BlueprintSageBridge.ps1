@@ -32,10 +32,166 @@ try{
 $conn.Open()
 $customerRows=Read-Table $conn "SELECT * FROM SALES_LEDGER";$customers=@();foreach($row in $customerRows){$ref=[string](Get-Field $row @('ACCOUNT_REF','ACCOUNT'));if([string]::IsNullOrWhiteSpace($ref)){continue};$customers+=@{account_ref=$ref.Trim();name=[string](Get-Field $row @('NAME','COMPANY_NAME'));balance=(Decimal-Or-Zero (Get-Field $row @('BALANCE','ACCOUNT_BALANCE')));credit_limit=(Decimal-Or-Zero (Get-Field $row @('CREDIT_LIMIT')));email=[string](Get-Field $row @('EMAIL','EMAIL_1','EMAIL1'));telephone=[string](Get-Field $row @('TELEPHONE','TEL_NUMBER','PHONE'));raw=@{account_ref=$ref.Trim();name=[string](Get-Field $row @('NAME','COMPANY_NAME'))}}};$customerRefs=@($customers|ForEach-Object{$_.account_ref});$customerResult=Send-Blueprint $config @{kind='customers';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Read-only SALES_LEDGER sync completed';customers=$customers;active_account_refs=$customerRefs};Write-Host ("Blueprint customer sync complete: {0} customers" -f $customers.Count) -ForegroundColor Green
 
-# Live Sage stock valuation. This is read-only and uses the same average-cost basis as gross profit.
-$stockRows=Read-Table $conn "SELECT STOCK_CODE, DESCRIPTION, QTY_IN_STOCK, AVERAGE_COST_PRICE, SALES_PRICE FROM STOCK"
-$stockItems=@();foreach($row in $stockRows){$code=[string](Get-Field $row @('STOCK_CODE','CODE'));if([string]::IsNullOrWhiteSpace($code)){continue};$stockItems+=@{stock_code=$code.Trim();description=[string](Get-Field $row @('DESCRIPTION','NAME'));quantity=(Decimal-Or-Zero (Get-Field $row @('QTY_IN_STOCK','QUANTITY_IN_STOCK','QUANTITY')));average_cost=(Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE','AVERAGE_COST','COST_PRICE')));sales_price=(Decimal-Or-Zero (Get-Field $row @('SALES_PRICE','SELLING_PRICE','PRICE')))}}
+# Live Sage stock valuation. This is read-only, excludes inactive/discontinued products,
+# and uses the same average-cost basis as gross profit.
+$stockRows=Read-Table $conn "SELECT * FROM STOCK"
+$stockItems=@();$inactiveStockCount=0
+foreach($row in $stockRows){
+  $code=[string](Get-Field $row @('STOCK_CODE','CODE'))
+  if([string]::IsNullOrWhiteSpace($code)){continue}
+
+  $inactiveValue=Get-Field $row @('INACTIVE_FLAG','INACTIVE','DISCONTINUED_FLAG','DISCONTINUED','DELETED_FLAG','DELETED')
+  $activeValue=Get-Field $row @('ACTIVE_FLAG','ACTIVE')
+  $isInactive=(
+    ($null-ne$inactiveValue -and ([string]$inactiveValue).Trim() -match '^(1|true|yes|y)
+
+# This Sage v32.1 AUDIT_HEADER does not expose DELETED_FLAG; keep the previously working header query.
+$auditRows=Read-Table $conn "SELECT * FROM AUDIT_HEADER";$transactions=@();foreach($row in $auditRows){$number=[string](Get-Field $row @('HEADER_NUMBER','TRAN_NUMBER','TRANSACTION_NUMBER','NUMBER'));if([string]::IsNullOrWhiteSpace($number)){continue};$account=[string](Get-Field $row @('ACCOUNT_REF','ACCOUNT'));$gross=Decimal-Or-Zero (Get-Field $row @('GROSS_AMOUNT','GROSS_VALUE','GROSS'));$paid=Decimal-Or-Zero (Get-Field $row @('AMOUNT_PAID','PAID_AMOUNT','PAID'));$outField=Get-Field $row @('OUTSTANDING','OUTSTANDING_AMOUNT','AMOUNT_OUTSTANDING');$outstanding=if($null-ne$outField){Decimal-Or-Zero $outField}else{[math]::Max([decimal]0,$gross-$paid)};$transactions+=@{tran_number=$number.Trim();item_count=(Int-Or-Null (Get-Field $row @('ITEM_COUNT','ITEMS')));type=[string](Get-Field $row @('TYPE','TRAN_TYPE','TRANSACTION_TYPE'));transaction_date=(Date-Or-Null (Get-Field $row @('DATE','TRAN_DATE','TRANSACTION_DATE')));account_ref=$account.Trim();inv_ref=[string](Get-Field $row @('INV_REF','INVOICE_REF','REFERENCE'));details=[string](Get-Field $row @('DETAILS','DESCRIPTION'));due_date=(Date-Or-Null (Get-Field $row @('DUE_DATE')));net_amount=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT','NET_VALUE','NET')));tax_amount=(Decimal-Or-Zero (Get-Field $row @('TAX_AMOUNT','TAX_VALUE','VAT_AMOUNT','VAT')));gross_amount=$gross;amount_paid=$paid;outstanding=$outstanding;paid_flag=(Int-Or-Null (Get-Field $row @('PAID_FLAG','PAID_STATUS_FLAG')));paid_status=[string](Get-Field $row @('PAID_STATUS','STATUS'));raw=@{tran_number=$number.Trim();account_ref=$account.Trim()}}};$txRefs=@($transactions|ForEach-Object{$_.tran_number});$txResults=Send-In-Chunks $config $transactions 500 {param($chunk) @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Read-only AUDIT_HEADER transaction chunk synced';transactions=$chunk}};$txCleanupResult=Send-Blueprint $config @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Transaction cleanup completed';transactions=@();active_transaction_refs=$txRefs};Write-Host ("Blueprint debtor sync complete: {0} transactions" -f $transactions.Count) -ForegroundColor Green
+
+# Sage INVOICE types validated locally: Product Invoice=Invoice; Product Credit Note=Credit Note; Product Quotation=Quotation.
+# Include invoices and credit notes only. Credits reverse both sales and cost so GP reconciles on the same commercial basis; quotations are excluded.
+$financialYearStart=[datetime]'2026-04-01'
+$profitFromDate=$financialYearStart.ToString('yyyy-MM-dd')
+$profitSql="SELECT I.INVOICE_DATE AS INVOICE_DATE, I.INVOICE_OR_CREDIT AS INVOICE_OR_CREDIT, II.NET_AMOUNT, II.QUANTITY, II.STOCK_CODE, S.AVERAGE_COST_PRICE FROM (INVOICE I INNER JOIN INVOICE_ITEM II ON I.INVOICE_NUMBER=II.INVOICE_NUMBER) LEFT JOIN STOCK S ON II.STOCK_CODE=S.STOCK_CODE WHERE I.INVOICE_DATE >= {d '$profitFromDate'} AND (I.INVOICE_OR_CREDIT='Invoice' OR I.INVOICE_OR_CREDIT='Credit Note')"
+Write-Host ("Blueprint gross profit scan: {0} to today - invoices minus credit notes" -f $profitFromDate) -ForegroundColor Cyan
+$profitRows=Read-Table $conn $profitSql;$daily=@{};foreach($row in $profitRows){$date=Date-Or-Null (Get-Field $row @('INVOICE_DATE'));if([string]::IsNullOrWhiteSpace($date)){continue};$docType=[string](Get-Field $row @('INVOICE_OR_CREDIT'));$sign=if($docType.Trim().ToUpperInvariant() -eq 'CREDIT NOTE'){[decimal]-1}else{[decimal]1};$net=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT')))*$sign;$qty=Decimal-Or-Zero (Get-Field $row @('QUANTITY'));$avg=Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE'));$cost=($qty*$avg)*$sign;if(!$daily.ContainsKey($date)){$daily[$date]=@{sales=[decimal]0;cost=[decimal]0;lines=0}};$daily[$date].sales+=$net;$daily[$date].cost+=$cost;$daily[$date].lines++};$snapshots=@();foreach($date in $daily.Keys){$sales=[decimal]$daily[$date].sales;$cost=[decimal]$daily[$date].cost;$gp=$sales-$cost;$pct=if($sales-ne0){($gp/$sales)*100}else{0};$snapshots+=@{snapshot_date=$date;sales_net=[math]::Round($sales,2);cost_of_goods=[math]::Round($cost,2);gross_profit=[math]::Round($gp,2);gross_profit_pct=[math]::Round($pct,2);line_count=$daily[$date].lines;cost_basis='STOCK.AVERAGE_COST_PRICE'}};$profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Office Sage 50';bridge_version='6.7-financial-year';message='Read-only Sage financial-year invoice/credit gross-profit snapshot sync completed';snapshots=$snapshots};Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} invoice/credit lines" -f $snapshots.Count,$profitRows.Count) -ForegroundColor Green
+
+# Management running costs: actual Sage nominal movements, with lumpy rent/electricity replaced by trailing-12-month daily accruals.
+# Stock purchases/COGS are excluded because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
+# Interest and depreciation are excluded from management running costs; bank/card charges remain operating costs.
+$costFromDate=$financialYearStart.ToString('yyyy-MM-dd')
+$annualFromDate=(Get-Date).Date.AddDays(-364).ToString('yyyy-MM-dd')
+$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '7000' AND NOMINAL_CODE < '9000'"
+$annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND NOMINAL_CODE='7200'"
+$nominalNames=@{};try{$nominalRows=Read-Table $conn "SELECT * FROM NOMINAL_LEDGER";foreach($n in $nominalRows){$nCode=[string](Get-Field $n @('ACCOUNT_REF','NOMINAL_CODE','CODE'));$nName=[string](Get-Field $n @('NAME','ACCOUNT_NAME','DESCRIPTION'));if(![string]::IsNullOrWhiteSpace($nCode)){$nominalNames[$nCode.Trim()]=$nName.Trim()}}}catch{Write-Host "Nominal account names unavailable; codes will still sync." -ForegroundColor Yellow}
+# Rent uses the current agreed monthly charge rather than a trailing-12-month average that included the older rate.
+$monthlyRent=if($null-ne$config.MonthlyRent -and (Decimal-Or-Zero $config.MonthlyRent)-gt0){Decimal-Or-Zero $config.MonthlyRent}else{[decimal]2448}
+$annualRent=$monthlyRent*[decimal]12;$annualElectricity=[decimal]0
+foreach($row in $annualRows){$value=Normalized-Cost ([string](Get-Field $row @('TYPE'))) (Get-Field $row @('NET_AMOUNT'));$annualElectricity+=$value}
+$dailyRent=$annualRent/[decimal]365;$dailyElectricity=$annualElectricity/[decimal]365
+$costDaily=@{}
+$costTransactions=@();$costOrdinal=0
+$startDate=$financialYearStart;$endDate=(Get-Date).Date
+for($d=$startDate;$d-le$endDate;$d=$d.AddDays(1)){$key=$d.ToString('yyyy-MM-dd');$costDaily[$key]=@{staff=[decimal]0;premises=[decimal]0;vehicle=[decimal]0;admin=[decimal]0;finance=[decimal]0;lines=0}}
+foreach($row in $costRows){
+  $costOrdinal++
+  $date=Date-Or-Null (Get-Field $row @('DATE'));if([string]::IsNullOrWhiteSpace($date)-or!$costDaily.ContainsKey($date)){continue}
+  $code=[string](Get-Field $row @('NOMINAL_CODE'));$type=[string](Get-Field $row @('TYPE'))
+  $value=Normalized-Cost $type (Get-Field $row @('NET_AMOUNT'))
+  $included=$true;$reason=$null
+  if($code-eq'7100'-or$code-eq'7200'){$included=$false;$reason='Replaced by smoothed rent/electricity accrual'}
+  elseif($code-eq'7013'){$included=$false;$reason='Excluded staff nominal'}
+  elseif($code-ge'7900'-and$code-le'7906' -and $code-ne'7901' -and $code-ne'7902' -and $code-ne'7905'){$included=$false;$reason='Interest/depreciation excluded from management costs'}
+  elseif($code-ge'8000'-and$code-lt'8200'){$included=$false;$reason='Tax/dividend/accounting nominal excluded'}
+  if($code-ge'7000'-and$code-le'7015'){$category='Staff'}
+  elseif($code-ge'7100'-and$code-le'7203'){$category='Premises'}
+  elseif($code-ge'7300'-and$code-le'7308'){$category='Vehicles'}
+  elseif($code-ge'7900'-and$code-le'7906'){$category='Finance'}
+  elseif(!$included){$category='Excluded / accounting only'}
+  else{$category='Admin / tech'}
+  $tran=[string](Get-Field $row @('TRAN_NUMBER','HEADER_NUMBER','TRANSACTION_NUMBER','NUMBER','RECORD_NUMBER'))
+  $split=[string](Get-Field $row @('SPLIT_NUMBER','ITEM_NUMBER','RECORD_NUMBER'))
+  $reference=[string](Get-Field $row @('INV_REF','REFERENCE','ORDER_NUMBER'))
+  $details=[string](Get-Field $row @('DETAILS','DESCRIPTION'))
+  $rawKey="$date|$type|$code|$tran|$split|$reference|$details|$value|$costOrdinal"
+  $costTransactions+=@{cost_key=(Hash-Text $rawKey);transaction_date=$date;transaction_number=$tran;split_number=$split;type=$type;nominal_code=$code;nominal_name=if($nominalNames.ContainsKey($code)){$nominalNames[$code]}else{''};reference=$reference;details=$details;net_amount=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT')));normalized_cost=[math]::Round($value,2);category=$category;included_in_management=$included;exclusion_reason=$reason}
+  if($included){
+    if($category-eq'Staff'){$costDaily[$date].staff+=$value}
+    elseif($category-eq'Premises'){$costDaily[$date].premises+=$value}
+    elseif($category-eq'Vehicles'){$costDaily[$date].vehicle+=$value}
+    elseif($category-eq'Finance'){$costDaily[$date].finance+=$value}
+    else{$costDaily[$date].admin+=$value}
+    $costDaily[$date].lines++
+  }
+}
+$costSnapshots=@();foreach($date in $costDaily.Keys){$staff=[decimal]$costDaily[$date].staff;$prem=[decimal]$costDaily[$date].premises+$dailyRent+$dailyElectricity;$vehicle=[decimal]$costDaily[$date].vehicle;$admin=[decimal]$costDaily[$date].admin;$finance=[decimal]$costDaily[$date].finance;$total=$staff+$prem+$vehicle+$admin+$finance;$costSnapshots+=@{snapshot_date=$date;running_costs=[math]::Round($total,2);staff_costs=[math]::Round($staff,2);premises_costs=[math]::Round($prem,2);vehicle_costs=[math]::Round($vehicle,2);admin_costs=[math]::Round($admin,2);finance_costs=[math]::Round($finance,2);rent_accrual=[math]::Round($dailyRent,2);electricity_accrual=[math]::Round($dailyElectricity,2);line_count=$costDaily[$date].lines;cost_basis='Actual Sage nominal movements; rent at current monthly charge; electricity smoothed from trailing 365 days; interest/depreciation excluded'}}
+$costResult=Send-Blueprint $config @{kind='running_cost_snapshots';bridge_name='Office Sage 50';bridge_version='6.8-current-rent';message='Read-only Sage financial-year management running-cost snapshot sync completed';snapshots=$costSnapshots};Write-Host ("Blueprint running cost sync complete: {0} daily snapshots | monthly rent {1:N2} | annual electricity {2:N2}" -f $costSnapshots.Count,$monthlyRent,$annualElectricity) -ForegroundColor Green
+$costKeys=@($costTransactions|ForEach-Object{$_.cost_key});$costTransactionResults=Send-Costs-In-Chunks $config $costTransactions 500;$costTransactionCleanup=Send-Blueprint-Costs $config @{costs=@();active_cost_keys=$costKeys};Write-Host ("Blueprint individual cost sync complete: {0} Sage entries" -f $costTransactions.Count) -ForegroundColor Green
+
+@{customers=$customerResult;stock=$stockResult;transaction_batches=$txResults.Count;transactions_cleanup=$txCleanupResult;profit=$profitResult;running_costs=$costResult;cost_transaction_batches=$costTransactionResults.Count;cost_transactions_cleanup=$costTransactionCleanup}|ConvertTo-Json -Depth 5
+}finally{if($conn.State-eq'Open'){$conn.Close()}}
+) -or
+    ($null-ne$activeValue -and ([string]$activeValue).Trim() -match '^(0|false|no|n)
+
+# This Sage v32.1 AUDIT_HEADER does not expose DELETED_FLAG; keep the previously working header query.
+$auditRows=Read-Table $conn "SELECT * FROM AUDIT_HEADER";$transactions=@();foreach($row in $auditRows){$number=[string](Get-Field $row @('HEADER_NUMBER','TRAN_NUMBER','TRANSACTION_NUMBER','NUMBER'));if([string]::IsNullOrWhiteSpace($number)){continue};$account=[string](Get-Field $row @('ACCOUNT_REF','ACCOUNT'));$gross=Decimal-Or-Zero (Get-Field $row @('GROSS_AMOUNT','GROSS_VALUE','GROSS'));$paid=Decimal-Or-Zero (Get-Field $row @('AMOUNT_PAID','PAID_AMOUNT','PAID'));$outField=Get-Field $row @('OUTSTANDING','OUTSTANDING_AMOUNT','AMOUNT_OUTSTANDING');$outstanding=if($null-ne$outField){Decimal-Or-Zero $outField}else{[math]::Max([decimal]0,$gross-$paid)};$transactions+=@{tran_number=$number.Trim();item_count=(Int-Or-Null (Get-Field $row @('ITEM_COUNT','ITEMS')));type=[string](Get-Field $row @('TYPE','TRAN_TYPE','TRANSACTION_TYPE'));transaction_date=(Date-Or-Null (Get-Field $row @('DATE','TRAN_DATE','TRANSACTION_DATE')));account_ref=$account.Trim();inv_ref=[string](Get-Field $row @('INV_REF','INVOICE_REF','REFERENCE'));details=[string](Get-Field $row @('DETAILS','DESCRIPTION'));due_date=(Date-Or-Null (Get-Field $row @('DUE_DATE')));net_amount=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT','NET_VALUE','NET')));tax_amount=(Decimal-Or-Zero (Get-Field $row @('TAX_AMOUNT','TAX_VALUE','VAT_AMOUNT','VAT')));gross_amount=$gross;amount_paid=$paid;outstanding=$outstanding;paid_flag=(Int-Or-Null (Get-Field $row @('PAID_FLAG','PAID_STATUS_FLAG')));paid_status=[string](Get-Field $row @('PAID_STATUS','STATUS'));raw=@{tran_number=$number.Trim();account_ref=$account.Trim()}}};$txRefs=@($transactions|ForEach-Object{$_.tran_number});$txResults=Send-In-Chunks $config $transactions 500 {param($chunk) @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Read-only AUDIT_HEADER transaction chunk synced';transactions=$chunk}};$txCleanupResult=Send-Blueprint $config @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Transaction cleanup completed';transactions=@();active_transaction_refs=$txRefs};Write-Host ("Blueprint debtor sync complete: {0} transactions" -f $transactions.Count) -ForegroundColor Green
+
+# Sage INVOICE types validated locally: Product Invoice=Invoice; Product Credit Note=Credit Note; Product Quotation=Quotation.
+# Include invoices and credit notes only. Credits reverse both sales and cost so GP reconciles on the same commercial basis; quotations are excluded.
+$financialYearStart=[datetime]'2026-04-01'
+$profitFromDate=$financialYearStart.ToString('yyyy-MM-dd')
+$profitSql="SELECT I.INVOICE_DATE AS INVOICE_DATE, I.INVOICE_OR_CREDIT AS INVOICE_OR_CREDIT, II.NET_AMOUNT, II.QUANTITY, II.STOCK_CODE, S.AVERAGE_COST_PRICE FROM (INVOICE I INNER JOIN INVOICE_ITEM II ON I.INVOICE_NUMBER=II.INVOICE_NUMBER) LEFT JOIN STOCK S ON II.STOCK_CODE=S.STOCK_CODE WHERE I.INVOICE_DATE >= {d '$profitFromDate'} AND (I.INVOICE_OR_CREDIT='Invoice' OR I.INVOICE_OR_CREDIT='Credit Note')"
+Write-Host ("Blueprint gross profit scan: {0} to today - invoices minus credit notes" -f $profitFromDate) -ForegroundColor Cyan
+$profitRows=Read-Table $conn $profitSql;$daily=@{};foreach($row in $profitRows){$date=Date-Or-Null (Get-Field $row @('INVOICE_DATE'));if([string]::IsNullOrWhiteSpace($date)){continue};$docType=[string](Get-Field $row @('INVOICE_OR_CREDIT'));$sign=if($docType.Trim().ToUpperInvariant() -eq 'CREDIT NOTE'){[decimal]-1}else{[decimal]1};$net=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT')))*$sign;$qty=Decimal-Or-Zero (Get-Field $row @('QUANTITY'));$avg=Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE'));$cost=($qty*$avg)*$sign;if(!$daily.ContainsKey($date)){$daily[$date]=@{sales=[decimal]0;cost=[decimal]0;lines=0}};$daily[$date].sales+=$net;$daily[$date].cost+=$cost;$daily[$date].lines++};$snapshots=@();foreach($date in $daily.Keys){$sales=[decimal]$daily[$date].sales;$cost=[decimal]$daily[$date].cost;$gp=$sales-$cost;$pct=if($sales-ne0){($gp/$sales)*100}else{0};$snapshots+=@{snapshot_date=$date;sales_net=[math]::Round($sales,2);cost_of_goods=[math]::Round($cost,2);gross_profit=[math]::Round($gp,2);gross_profit_pct=[math]::Round($pct,2);line_count=$daily[$date].lines;cost_basis='STOCK.AVERAGE_COST_PRICE'}};$profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Office Sage 50';bridge_version='6.7-financial-year';message='Read-only Sage financial-year invoice/credit gross-profit snapshot sync completed';snapshots=$snapshots};Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} invoice/credit lines" -f $snapshots.Count,$profitRows.Count) -ForegroundColor Green
+
+# Management running costs: actual Sage nominal movements, with lumpy rent/electricity replaced by trailing-12-month daily accruals.
+# Stock purchases/COGS are excluded because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
+# Interest and depreciation are excluded from management running costs; bank/card charges remain operating costs.
+$costFromDate=$financialYearStart.ToString('yyyy-MM-dd')
+$annualFromDate=(Get-Date).Date.AddDays(-364).ToString('yyyy-MM-dd')
+$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '7000' AND NOMINAL_CODE < '9000'"
+$annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND NOMINAL_CODE='7200'"
+$nominalNames=@{};try{$nominalRows=Read-Table $conn "SELECT * FROM NOMINAL_LEDGER";foreach($n in $nominalRows){$nCode=[string](Get-Field $n @('ACCOUNT_REF','NOMINAL_CODE','CODE'));$nName=[string](Get-Field $n @('NAME','ACCOUNT_NAME','DESCRIPTION'));if(![string]::IsNullOrWhiteSpace($nCode)){$nominalNames[$nCode.Trim()]=$nName.Trim()}}}catch{Write-Host "Nominal account names unavailable; codes will still sync." -ForegroundColor Yellow}
+# Rent uses the current agreed monthly charge rather than a trailing-12-month average that included the older rate.
+$monthlyRent=if($null-ne$config.MonthlyRent -and (Decimal-Or-Zero $config.MonthlyRent)-gt0){Decimal-Or-Zero $config.MonthlyRent}else{[decimal]2448}
+$annualRent=$monthlyRent*[decimal]12;$annualElectricity=[decimal]0
+foreach($row in $annualRows){$value=Normalized-Cost ([string](Get-Field $row @('TYPE'))) (Get-Field $row @('NET_AMOUNT'));$annualElectricity+=$value}
+$dailyRent=$annualRent/[decimal]365;$dailyElectricity=$annualElectricity/[decimal]365
+$costDaily=@{}
+$costTransactions=@();$costOrdinal=0
+$startDate=$financialYearStart;$endDate=(Get-Date).Date
+for($d=$startDate;$d-le$endDate;$d=$d.AddDays(1)){$key=$d.ToString('yyyy-MM-dd');$costDaily[$key]=@{staff=[decimal]0;premises=[decimal]0;vehicle=[decimal]0;admin=[decimal]0;finance=[decimal]0;lines=0}}
+foreach($row in $costRows){
+  $costOrdinal++
+  $date=Date-Or-Null (Get-Field $row @('DATE'));if([string]::IsNullOrWhiteSpace($date)-or!$costDaily.ContainsKey($date)){continue}
+  $code=[string](Get-Field $row @('NOMINAL_CODE'));$type=[string](Get-Field $row @('TYPE'))
+  $value=Normalized-Cost $type (Get-Field $row @('NET_AMOUNT'))
+  $included=$true;$reason=$null
+  if($code-eq'7100'-or$code-eq'7200'){$included=$false;$reason='Replaced by smoothed rent/electricity accrual'}
+  elseif($code-eq'7013'){$included=$false;$reason='Excluded staff nominal'}
+  elseif($code-ge'7900'-and$code-le'7906' -and $code-ne'7901' -and $code-ne'7902' -and $code-ne'7905'){$included=$false;$reason='Interest/depreciation excluded from management costs'}
+  elseif($code-ge'8000'-and$code-lt'8200'){$included=$false;$reason='Tax/dividend/accounting nominal excluded'}
+  if($code-ge'7000'-and$code-le'7015'){$category='Staff'}
+  elseif($code-ge'7100'-and$code-le'7203'){$category='Premises'}
+  elseif($code-ge'7300'-and$code-le'7308'){$category='Vehicles'}
+  elseif($code-ge'7900'-and$code-le'7906'){$category='Finance'}
+  elseif(!$included){$category='Excluded / accounting only'}
+  else{$category='Admin / tech'}
+  $tran=[string](Get-Field $row @('TRAN_NUMBER','HEADER_NUMBER','TRANSACTION_NUMBER','NUMBER','RECORD_NUMBER'))
+  $split=[string](Get-Field $row @('SPLIT_NUMBER','ITEM_NUMBER','RECORD_NUMBER'))
+  $reference=[string](Get-Field $row @('INV_REF','REFERENCE','ORDER_NUMBER'))
+  $details=[string](Get-Field $row @('DETAILS','DESCRIPTION'))
+  $rawKey="$date|$type|$code|$tran|$split|$reference|$details|$value|$costOrdinal"
+  $costTransactions+=@{cost_key=(Hash-Text $rawKey);transaction_date=$date;transaction_number=$tran;split_number=$split;type=$type;nominal_code=$code;nominal_name=if($nominalNames.ContainsKey($code)){$nominalNames[$code]}else{''};reference=$reference;details=$details;net_amount=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT')));normalized_cost=[math]::Round($value,2);category=$category;included_in_management=$included;exclusion_reason=$reason}
+  if($included){
+    if($category-eq'Staff'){$costDaily[$date].staff+=$value}
+    elseif($category-eq'Premises'){$costDaily[$date].premises+=$value}
+    elseif($category-eq'Vehicles'){$costDaily[$date].vehicle+=$value}
+    elseif($category-eq'Finance'){$costDaily[$date].finance+=$value}
+    else{$costDaily[$date].admin+=$value}
+    $costDaily[$date].lines++
+  }
+}
+$costSnapshots=@();foreach($date in $costDaily.Keys){$staff=[decimal]$costDaily[$date].staff;$prem=[decimal]$costDaily[$date].premises+$dailyRent+$dailyElectricity;$vehicle=[decimal]$costDaily[$date].vehicle;$admin=[decimal]$costDaily[$date].admin;$finance=[decimal]$costDaily[$date].finance;$total=$staff+$prem+$vehicle+$admin+$finance;$costSnapshots+=@{snapshot_date=$date;running_costs=[math]::Round($total,2);staff_costs=[math]::Round($staff,2);premises_costs=[math]::Round($prem,2);vehicle_costs=[math]::Round($vehicle,2);admin_costs=[math]::Round($admin,2);finance_costs=[math]::Round($finance,2);rent_accrual=[math]::Round($dailyRent,2);electricity_accrual=[math]::Round($dailyElectricity,2);line_count=$costDaily[$date].lines;cost_basis='Actual Sage nominal movements; rent at current monthly charge; electricity smoothed from trailing 365 days; interest/depreciation excluded'}}
+$costResult=Send-Blueprint $config @{kind='running_cost_snapshots';bridge_name='Office Sage 50';bridge_version='6.8-current-rent';message='Read-only Sage financial-year management running-cost snapshot sync completed';snapshots=$costSnapshots};Write-Host ("Blueprint running cost sync complete: {0} daily snapshots | monthly rent {1:N2} | annual electricity {2:N2}" -f $costSnapshots.Count,$monthlyRent,$annualElectricity) -ForegroundColor Green
+$costKeys=@($costTransactions|ForEach-Object{$_.cost_key});$costTransactionResults=Send-Costs-In-Chunks $config $costTransactions 500;$costTransactionCleanup=Send-Blueprint-Costs $config @{costs=@();active_cost_keys=$costKeys};Write-Host ("Blueprint individual cost sync complete: {0} Sage entries" -f $costTransactions.Count) -ForegroundColor Green
+
+@{customers=$customerResult;stock=$stockResult;transaction_batches=$txResults.Count;transactions_cleanup=$txCleanupResult;profit=$profitResult;running_costs=$costResult;cost_transaction_batches=$costTransactionResults.Count;cost_transactions_cleanup=$costTransactionCleanup}|ConvertTo-Json -Depth 5
+}finally{if($conn.State-eq'Open'){$conn.Close()}}
+)
+  )
+  if($isInactive){$inactiveStockCount++;continue}
+
+  $stockItems+=@{
+    stock_code=$code.Trim()
+    description=[string](Get-Field $row @('DESCRIPTION','NAME'))
+    quantity=(Decimal-Or-Zero (Get-Field $row @('QTY_IN_STOCK','QUANTITY_IN_STOCK','QUANTITY')))
+    average_cost=(Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE','AVERAGE_COST','COST_PRICE')))
+    sales_price=(Decimal-Or-Zero (Get-Field $row @('SALES_PRICE','SELLING_PRICE','PRICE')))
+  }
+}
 $stockCodes=@($stockItems|ForEach-Object{$_.stock_code});$stockResult=Send-Blueprint-Stock $config @{items=$stockItems;active_stock_codes=$stockCodes};Write-Host ("Blueprint stock valuation sync complete: {0} stock items" -f $stockItems.Count) -ForegroundColor Green
+if($inactiveStockCount-gt0){Write-Host ("Blueprint inactive stock excluded: {0} items" -f $inactiveStockCount) -ForegroundColor DarkGray}
 
 # This Sage v32.1 AUDIT_HEADER does not expose DELETED_FLAG; keep the previously working header query.
 $auditRows=Read-Table $conn "SELECT * FROM AUDIT_HEADER";$transactions=@();foreach($row in $auditRows){$number=[string](Get-Field $row @('HEADER_NUMBER','TRAN_NUMBER','TRANSACTION_NUMBER','NUMBER'));if([string]::IsNullOrWhiteSpace($number)){continue};$account=[string](Get-Field $row @('ACCOUNT_REF','ACCOUNT'));$gross=Decimal-Or-Zero (Get-Field $row @('GROSS_AMOUNT','GROSS_VALUE','GROSS'));$paid=Decimal-Or-Zero (Get-Field $row @('AMOUNT_PAID','PAID_AMOUNT','PAID'));$outField=Get-Field $row @('OUTSTANDING','OUTSTANDING_AMOUNT','AMOUNT_OUTSTANDING');$outstanding=if($null-ne$outField){Decimal-Or-Zero $outField}else{[math]::Max([decimal]0,$gross-$paid)};$transactions+=@{tran_number=$number.Trim();item_count=(Int-Or-Null (Get-Field $row @('ITEM_COUNT','ITEMS')));type=[string](Get-Field $row @('TYPE','TRAN_TYPE','TRANSACTION_TYPE'));transaction_date=(Date-Or-Null (Get-Field $row @('DATE','TRAN_DATE','TRANSACTION_DATE')));account_ref=$account.Trim();inv_ref=[string](Get-Field $row @('INV_REF','INVOICE_REF','REFERENCE'));details=[string](Get-Field $row @('DETAILS','DESCRIPTION'));due_date=(Date-Or-Null (Get-Field $row @('DUE_DATE')));net_amount=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT','NET_VALUE','NET')));tax_amount=(Decimal-Or-Zero (Get-Field $row @('TAX_AMOUNT','TAX_VALUE','VAT_AMOUNT','VAT')));gross_amount=$gross;amount_paid=$paid;outstanding=$outstanding;paid_flag=(Int-Or-Null (Get-Field $row @('PAID_FLAG','PAID_STATUS_FLAG')));paid_status=[string](Get-Field $row @('PAID_STATUS','STATUS'));raw=@{tran_number=$number.Trim();account_ref=$account.Trim()}}};$txRefs=@($transactions|ForEach-Object{$_.tran_number});$txResults=Send-In-Chunks $config $transactions 500 {param($chunk) @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Read-only AUDIT_HEADER transaction chunk synced';transactions=$chunk}};$txCleanupResult=Send-Blueprint $config @{kind='transactions';bridge_name='Office Sage 50';bridge_version='6.6-running-costs';message='Transaction cleanup completed';transactions=@();active_transaction_refs=$txRefs};Write-Host ("Blueprint debtor sync complete: {0} transactions" -f $transactions.Count) -ForegroundColor Green
