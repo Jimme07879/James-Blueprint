@@ -34,7 +34,7 @@ $customerRows=Read-Table $conn "SELECT * FROM SALES_LEDGER";$customers=@();forea
 
 # Live Sage stock valuation. This is read-only and uses the same average-cost basis as gross profit.
 $stockRows=Read-Table $conn "SELECT STOCK_CODE, DESCRIPTION, QTY_IN_STOCK, AVERAGE_COST_PRICE, SALES_PRICE FROM STOCK"
-$stockItems=@();foreach($row in $stockRows){$code=[string](Get-Field $row @('STOCK_CODE','CODE'));if([string]::IsNullOrWhiteSpace($code)){continue};$stockItems+=@{stock_code=$code.Trim();description=[string](Get-Field $row @('DESCRIPTION','NAME'));quantity=(Decimal-Or-Zero (Get-Field $row @('QTY_IN_STOCK','QUANTITY_IN_STOCK','QUANTITY'));average_cost=(Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE','AVERAGE_COST','COST_PRICE'));sales_price=(Decimal-Or-Zero (Get-Field $row @('SALES_PRICE','SELLING_PRICE','PRICE')))}}
+$stockItems=@();foreach($row in $stockRows){$code=[string](Get-Field $row @('STOCK_CODE','CODE'));if([string]::IsNullOrWhiteSpace($code)){continue};$stockItems+=@{stock_code=$code.Trim();description=[string](Get-Field $row @('DESCRIPTION','NAME'));quantity=(Decimal-Or-Zero (Get-Field $row @('QTY_IN_STOCK','QUANTITY_IN_STOCK','QUANTITY')));average_cost=(Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE','AVERAGE_COST','COST_PRICE')));sales_price=(Decimal-Or-Zero (Get-Field $row @('SALES_PRICE','SELLING_PRICE','PRICE')))}}
 $stockCodes=@($stockItems|ForEach-Object{$_.stock_code});$stockResult=Send-Blueprint-Stock $config @{items=$stockItems;active_stock_codes=$stockCodes};Write-Host ("Blueprint stock valuation sync complete: {0} stock items" -f $stockItems.Count) -ForegroundColor Green
 
 # This Sage v32.1 AUDIT_HEADER does not expose DELETED_FLAG; keep the previously working header query.
