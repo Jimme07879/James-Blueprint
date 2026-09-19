@@ -73,7 +73,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Discipline','Proof','Vault','Decisions','Me','Relationships','Health','Goals','CEO','Analytics','Weekly','Business Hub','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Discipline','Proof','Vault','Me','Relationships','Health','Goals','CEO','Analytics','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -252,15 +252,15 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='Discipline'&&<DisciplineCentre userId={session.user.id}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
-      {tab==='Decisions'&&<DecisionJournal session={session} items={decisionItems} reload={loadAll}/>}
+
       {tab==='Me'&&<MeCentre entries={entries} edit={editDaily}/>}
       {tab==='Relationships'&&<Relationships session={session} entries={entries} settings={settings} reload={loadAll}/>}
       {tab==='Health'&&<Health entries={entries}/>}
       {tab==='Goals'&&<Goals session={session} goals={goals} reload={loadAll}/>}
       {tab==='CEO'&&<CEOCentre entries={entries} business={business} leads={leads} setTab={setTab}/>}
       {tab==='Analytics'&&<Analytics entries={entries}/>}
-      {tab==='Weekly'&&<Weekly session={session} records={weekly} entries={entries} reload={loadAll}/>}
-      {tab==='Business Hub'&&<Business session={session} value={business} reload={loadAll}/>}
+
+
       {tab==='Settings'&&<Vision session={session} settings={settings} reload={loadAll}/>}
     </main>
     <DisciplineReminder userId={session.user.id} openDiscipline={()=>setTab('Discipline')}/>
@@ -525,7 +525,7 @@ function TodayOps({session,entries,goals,leads,decisionItems,emailSummary,reload
     const soon=l.follow_up_date>today&&l.follow_up_date<=weekEndStr;
     if(due||soon) items.push({id:`sales-${l.id}`,source:'Sales',title:`Follow up: ${l.name}`,detail:l.next_action||'Make contact and agree the next step',bucket:due?'Today':'This Week'});
   });
-  decisionItems.filter(d=>d.review_status!=='Reviewed'&&d.review_date&&d.review_date<=today).forEach(d=>items.push({id:`decision-${d.id}`,source:'Decision',title:`Review: ${d.title}`,detail:d.decision_made,bucket:'Now'}));
+
 
   const unique=Array.from(new Map(items.map(i=>[i.id,i])).values());
   const filtered=view==='All'?unique:unique.filter(i=>i.bucket===view);
@@ -817,7 +817,7 @@ function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionIt
   const growing=customers.filter(c=>c.current>c.prior*1.2&&c.current>0).sort((a,b)=>(b.current-b.prior)-(a.current-a.prior))[0];
   const dueLead=activeLeads.filter(l=>l.follow_up_date&&l.follow_up_date<=today).sort((a,b)=>(Number(b.quoted_value)||Number(b.weekly_value)||0)-(Number(a.quoted_value)||Number(a.weekly_value)||0))[0];
   const topEmail=emailSummary.messages.map(m=>({m,insight:getEmailInsight(m)})).filter(x=>!(x.m as OutlookMessage & {handled?:boolean}).handled&&x.insight.score>=55&&x.insight.category!=='Routine').sort((a,b)=>b.insight.score-a.insight.score)[0];
-  const decisionDue=decisionItems.find(d=>d.review_status!=='Reviewed'&&d.review_date&&d.review_date<=today);
+
   const overdueGoal=goals.find(g=>g.status!=='Complete'&&g.deadline&&g.deadline<today);
 
   const rawAlerts:SteveCommandAlert[]=[];
@@ -826,7 +826,7 @@ function Dashboard({session,entries,goals,leads,proofItems,vaultItems,decisionIt
   if(dormant&&(!worstDecline||dormant.name!==worstDecline.name)) rawAlerts.push({key:`dormant-${dormant.name.toLowerCase()}`,priority:88,title:`${dormant.name} looks dormant`,detail:`${dormant.days} days since the latest imported sale; prior-period spend ${money(dormant.prior)}.`,reason:'A previously active customer has stopped buying.',action:'Reconnect today and find out where the business has gone.',source:'Customers',tab:'Customers'});
   if(dueLead) rawAlerts.push({key:`sales-${dueLead.id}`,priority:82,title:`Follow up ${dueLead.name}`,detail:`${dueLead.next_action||'A sales follow-up is due today.'}${Number(dueLead.quoted_value||dueLead.weekly_value)?` · Opportunity ${money(dueLead.quoted_value||dueLead.weekly_value)}`:''}`,reason:'The follow-up date is due and the opportunity is still active.',action:'Make contact and agree the next step.',source:'Sales',tab:'Sales'});
   if(topEmail) rawAlerts.push({key:`email-${topEmail.m.id}`,priority:Math.min(90,topEmail.insight.score),title:topEmail.m.subject||'Important Outlook message',detail:topEmail.insight.reason,reason:`Steve inbox score ${topEmail.insight.score}/100.`,action:topEmail.insight.suggestedAction,source:'Email',tab:'Email'});
-  if(decisionDue) rawAlerts.push({key:`decision-${decisionDue.id}`,priority:76,title:`Review decision: ${decisionDue.title}`,detail:decisionDue.decision_made,reason:'The review date has arrived.',action:'Review the outcome and capture the lesson.',source:'Decisions',tab:'Decisions'});
+
   if(overdueGoal) rawAlerts.push({key:`goal-${overdueGoal.id}`,priority:74,title:`Overdue: ${overdueGoal.title}`,detail:overdueGoal.next_action||'This goal is past its deadline.',reason:'An overdue commitment is still open.',action:'Complete it, re-date it or consciously drop it.',source:'Today',tab:'Today'});
   if(growing) rawAlerts.push({key:`growth-${growing.name.toLowerCase()}`,priority:58,title:`${growing.name} is growing`,detail:`${money(growing.current)} in the last 28 days vs ${money(growing.prior)} previously.`,reason:'Growing customers are often the easiest place to find incremental revenue.',action:'Ask what else you can supply while momentum is positive.',source:'Customers',tab:'Customers'});
 
@@ -963,7 +963,7 @@ function CEOCentre({entries,business,leads,setTab}:{entries:DailyEntry[],busines
     </div>
     <div className="grid cols2" style={{marginTop:18}}>
       <div className="card"><h2>CEO focus</h2><div className="list"><div className="listItem"><strong>Biggest opportunity</strong><br/>{latest?.opportunity||'Not entered'}</div><div className="listItem"><strong>Biggest risk</strong><br/>{latest?.risk||'Not entered'}</div><div className="listItem"><strong>Decision I am avoiding</strong><br/>{latest?.avoiding||'None recorded'}</div></div></div>
-      <div className="card"><h2>Leverage</h2><div className="list"><div className="listItem"><strong>Delegate</strong><br/>{latest?.delegate_task||'Not entered'}</div><div className="listItem"><strong>Automate</strong><br/>{latest?.automate_task||'Not entered'}</div></div><button className="btn" style={{marginTop:12}} onClick={()=>setTab('Business Hub')}>Open Business Hub</button></div>
+      <div className="card"><h2>Leverage</h2><div className="list"><div className="listItem"><strong>Delegate</strong><br/>{latest?.delegate_task||'Not entered'}</div><div className="listItem"><strong>Automate</strong><br/>{latest?.automate_task||'Not entered'}</div></div></div>
     </div>
   </>
 }
