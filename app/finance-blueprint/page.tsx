@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "../../lib/supabase";
+import ManagementAccountsLayer from "./ManagementAccountsLayer";
 import "./finance-blueprint.css";
 
 type ProfitRow = { snapshot_date: string; sales_net: number; cost_of_goods?: number; gross_profit: number };
@@ -95,7 +96,7 @@ function FinanceApp({ session }: { session: Session }) {
   const [profits, setProfits] = useState<ProfitRow[]>([]); const [costs, setCosts] = useState<CostSnapshot[]>([]);
   const [transactions, setTransactions] = useState<CostTransaction[]>([]); const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [selectedMonth, setSelectedMonth] = useState("");
-  const [search, setSearch] = useState(""); const [category, setCategory] = useState("All"); const [tab, setTab] = useState<"overview" | "costs" | "transactions">("overview");
+  const [search, setSearch] = useState(""); const [category, setCategory] = useState("All"); const [tab, setTab] = useState<"overview" | "accounts" | "stock" | "close" | "costs" | "transactions">("overview");
   const [aiInsights, setAiInsights] = useState<Insight[] | null>(null); const [aiBusy, setAiBusy] = useState(false); const [aiNote, setAiNote] = useState("");
 
   const load = async () => {
@@ -156,11 +157,11 @@ function FinanceApp({ session }: { session: Session }) {
 
   return <main className="fb-shell">
     <aside className="fb-side"><div><div className="fb-brand">FINANCE<br /><span>BLUEPRINT</span></div><p>Sage command centre</p></div>
-      <nav><button className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>Overview</button><button className={tab === "costs" ? "active" : ""} onClick={() => setTab("costs")}>Monthly costs</button><button className={tab === "transactions" ? "active" : ""} onClick={() => setTab("transactions")}>Sage transactions</button></nav>
+      <nav><button className={tab === "overview" ? "active" : ""} onClick={() => setTab("overview")}>Overview</button><button className={tab === "accounts" ? "active" : ""} onClick={() => setTab("accounts")}>Management accounts</button><button className={tab === "stock" ? "active" : ""} onClick={() => setTab("stock")}>Stock valuation</button><button className={tab === "close" ? "active" : ""} onClick={() => setTab("close")}>Month-end close</button><button className={tab === "costs" ? "active" : ""} onClick={() => setTab("costs")}>Monthly costs</button><button className={tab === "transactions" ? "active" : ""} onClick={() => setTab("transactions")}>Sage transactions</button></nav>
       <div className="fb-account">Read-only Sage view<br /><span>{session.user.email}</span><button onClick={() => supabase.auth.signOut()}>Sign out</button></div>
     </aside>
     <section className="fb-main">
-      <header className="fb-top"><div><div className="fb-eyebrow">N&amp;J WHOLESALE</div><h1>{tab === "overview" ? "Financial overview" : tab === "costs" ? "Monthly cost control" : "Sage cost transactions"}</h1><p>Financial year from 1 April 2026 · refreshed from the read-only Sage Bridge</p></div><div className="fb-period"><label>Reporting month<select value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setAiInsights(null); }}>{months.map(month => <option key={month.key} value={month.key}>{monthName(month.key)}{month.key === todayKey() ? " (part month)" : ""}</option>)}</select></label></div></header>
+      <header className="fb-top"><div><div className="fb-eyebrow">N&amp;J WHOLESALE</div><h1>{{ overview: "Financial overview", accounts: "Management accounts", stock: "Stock valuation", close: "Month-end close", costs: "Monthly cost control", transactions: "Sage cost transactions" }[tab]}</h1><p>Financial year from 1 April 2026 · refreshed from the read-only Sage Bridge</p></div><div className="fb-period"><label>Reporting month<select value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setAiInsights(null); }}>{months.map(month => <option key={month.key} value={month.key}>{monthName(month.key)}{month.key === todayKey() ? " (part month)" : ""}</option>)}</select></label></div></header>
       {error && <div className="fb-banner error">{error}</div>}{loading && <div className="fb-banner">Refreshing Sage figures…</div>}
 
       {tab === "overview" && <>
@@ -178,6 +179,8 @@ function FinanceApp({ session }: { session: Session }) {
         <div className="fb-table-wrap"><table><thead><tr><th>Cost area</th><th>Current month</th><th>Previous month</th><th>£ movement</th><th>% movement</th><th>% of sales</th><th>Signal</th></tr></thead><tbody>{categories.map(item => { const delta = item.value - item.previous; const movement = changePct(item.value, item.previous); const signal = delta > 500 && movement > 10 ? "Investigate" : delta > 100 && movement > 10 ? "Watch" : delta < -100 ? "Improving" : "Stable"; return <tr key={item.name}><td><b>{item.name}</b></td><td>{GBP2.format(item.value)}</td><td>{GBP2.format(item.previous)}</td><td className={delta > 0 ? "negative" : delta < 0 ? "positive-text" : ""}>{delta >= 0 ? "+" : ""}{GBP2.format(delta)}</td><td>{item.previous ? pct(movement) : "—"}</td><td>{current.sales ? `${(item.value / current.sales * 100).toFixed(1)}%` : "—"}</td><td><span className={`fb-signal ${signal.toLowerCase()}`}>{signal}</span></td></tr>; })}</tbody></table></div>
         <div className="fb-note">A monthly increase is a prompt to investigate, not automatically a saving opportunity. Timing differences, quarterly bills and credits can move between months.</div>
       </section>}
+
+      {(tab === "accounts" || tab === "stock" || tab === "close") && <ManagementAccountsLayer session={session} selectedMonth={selectedMonth} current={current} debt={debt} view={tab} />}
 
       {tab === "transactions" && <section className="fb-card"><div className="fb-card-head"><div><div className="fb-eyebrow">AUDITABLE DRILL-DOWN</div><h2>Individual Sage cost entries</h2></div><div className="fb-total">Filtered <strong>{money(filteredTransactions.reduce((sum, row) => sum + Number(row.normalized_cost || 0), 0))}</strong></div></div>
         <div className="fb-filters"><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search supplier, reference, description or nominal…" /><select value={category} onChange={e => setCategory(e.target.value)}><option>All</option><option>Staff</option><option>Premises</option><option>Vehicles</option><option>Admin / tech</option><option>Finance</option></select></div>
