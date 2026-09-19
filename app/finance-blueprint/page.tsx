@@ -160,7 +160,7 @@ function FinanceApp({ session }: { session: Session }) {
       <div className="fb-account">Read-only Sage view<br /><span>{session.user.email}</span><button onClick={() => supabase.auth.signOut()}>Sign out</button></div>
     </aside>
     <section className="fb-main">
-      <header className="fb-top"><div><div className="fb-eyebrow">E&amp;T WHOLESALE</div><h1>{tab === "overview" ? "Financial overview" : tab === "costs" ? "Monthly cost control" : "Sage cost transactions"}</h1><p>Financial year from 1 April 2026 · refreshed from the read-only Sage Bridge</p></div><div className="fb-period"><label>Reporting month<select value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setAiInsights(null); }}>{months.map(month => <option key={month.key} value={month.key}>{monthName(month.key)}{month.key === todayKey() ? " (part month)" : ""}</option>)}</select></label></div></header>
+      <header className="fb-top"><div><div className="fb-eyebrow">N&amp;J WHOLESALE</div><h1>{tab === "overview" ? "Financial overview" : tab === "costs" ? "Monthly cost control" : "Sage cost transactions"}</h1><p>Financial year from 1 April 2026 · refreshed from the read-only Sage Bridge</p></div><div className="fb-period"><label>Reporting month<select value={selectedMonth} onChange={e => { setSelectedMonth(e.target.value); setAiInsights(null); }}>{months.map(month => <option key={month.key} value={month.key}>{monthName(month.key)}{month.key === todayKey() ? " (part month)" : ""}</option>)}</select></label></div></header>
       {error && <div className="fb-banner error">{error}</div>}{loading && <div className="fb-banner">Refreshing Sage figures…</div>}
 
       {tab === "overview" && <>
