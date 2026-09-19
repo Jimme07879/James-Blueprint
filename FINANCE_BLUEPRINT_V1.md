@@ -1,10 +1,10 @@
-# Finance Blueprint V1
+# N&J Finance Blueprint
 
 Finance Blueprint is a separate financial-only interface within the existing Blueprint deployment.
 
 Route: `/finance-blueprint`
 
-## Included in V1
+## Live finance layer
 
 - Sage financial-year reporting from 1 April 2026
 - Monthly sales, gross profit, running costs and management profit
@@ -13,6 +13,18 @@ Route: `/finance-blueprint`
 - Total live Sage customer debt
 - Built-in, deterministic financial checks that work without an AI service
 - Optional server-side AI analysis using the OpenAI Responses API and structured output
+
+## Management accounts layer
+
+- Live Sage stock quantities and average costs through the read-only bridge
+- Monthly stock count register with per-line condition and provisions
+- Adjusted management profit without double-counting Sage product cost
+- Balance-sheet snapshot covering stock, debtors, bank/cash, creditors, VAT, tax, loans and HP
+- Accrual, prepayment, payroll, depreciation and other P&L adjustments
+- Budget-versus-actual reporting
+- Nine-point month-end checklist with draft, reviewed and locked states
+
+Stock values are estimates until a physical count and accounting review are complete. Sage remains the source of transaction data; the management layer stores separate, auditable month-end entries.
 
 ## Required existing environment variables
 
