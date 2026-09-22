@@ -71,12 +71,11 @@ Write-Host ("Blueprint gross profit scan: {0} to today - invoices minus credit n
 $profitRows=Read-Table $conn $profitSql;$daily=@{};foreach($row in $profitRows){$date=Date-Or-Null (Get-Field $row @('INVOICE_DATE'));if([string]::IsNullOrWhiteSpace($date)){continue};$docType=[string](Get-Field $row @('INVOICE_OR_CREDIT'));$sign=if($docType.Trim().ToUpperInvariant() -eq 'CREDIT NOTE'){[decimal]-1}else{[decimal]1};$net=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT')))*$sign;$qty=Decimal-Or-Zero (Get-Field $row @('QUANTITY'));$avg=Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE'));$cost=($qty*$avg)*$sign;if(!$daily.ContainsKey($date)){$daily[$date]=@{sales=[decimal]0;cost=[decimal]0;lines=0}};$daily[$date].sales+=$net;$daily[$date].cost+=$cost;$daily[$date].lines++};$snapshots=@();foreach($date in $daily.Keys){$sales=[decimal]$daily[$date].sales;$cost=[decimal]$daily[$date].cost;$gp=$sales-$cost;$pct=if($sales-ne0){($gp/$sales)*100}else{0};$snapshots+=@{snapshot_date=$date;sales_net=[math]::Round($sales,2);cost_of_goods=[math]::Round($cost,2);gross_profit=[math]::Round($gp,2);gross_profit_pct=[math]::Round($pct,2);line_count=$daily[$date].lines;cost_basis='STOCK.AVERAGE_COST_PRICE'}};$profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Office Sage 50';bridge_version='6.7-financial-year';message='Read-only Sage financial-year invoice/credit gross-profit snapshot sync completed';snapshots=$snapshots};Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} invoice/credit lines" -f $snapshots.Count,$profitRows.Count) -ForegroundColor Green
 
 # Management running costs: actual Sage nominal movements, with lumpy rent/electricity replaced by trailing-12-month daily accruals.
-# Stock purchases (nominals 5000-5999) are synced separately for cash visibility and excluded from running costs,
-# because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
+# Stock purchases/COGS are excluded because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
 # Interest and depreciation are excluded from management running costs; bank/card charges remain operating costs.
 $costFromDate=$financialYearStart.ToString('yyyy-MM-dd')
 $annualFromDate=(Get-Date).Date.AddDays(-364).ToString('yyyy-MM-dd')
-$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '5000' AND NOMINAL_CODE < '9000'"
+$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '7000' AND NOMINAL_CODE < '9000'"
 $annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND NOMINAL_CODE='7200'"
 $nominalNames=@{};try{$nominalRows=Read-Table $conn "SELECT * FROM NOMINAL_LEDGER";foreach($n in $nominalRows){$nCode=[string](Get-Field $n @('ACCOUNT_REF','NOMINAL_CODE','CODE'));$nName=[string](Get-Field $n @('NAME','ACCOUNT_NAME','DESCRIPTION'));if(![string]::IsNullOrWhiteSpace($nCode)){$nominalNames[$nCode.Trim()]=$nName.Trim()}}}catch{Write-Host "Nominal account names unavailable; codes will still sync." -ForegroundColor Yellow}
 # Rent uses the current agreed monthly charge rather than a trailing-12-month average that included the older rate.
@@ -94,13 +93,11 @@ foreach($row in $costRows){
   $code=[string](Get-Field $row @('NOMINAL_CODE'));$type=[string](Get-Field $row @('TYPE'))
   $value=Normalized-Cost $type (Get-Field $row @('NET_AMOUNT'))
   $included=$true;$reason=$null
-  if($code-ge'5000'-and$code-lt'6000'){$included=$false;$reason='Stock purchase - already reflected in gross profit'}
-  elseif($code-eq'7100'-or$code-eq'7200'){$included=$false;$reason='Replaced by smoothed rent/electricity accrual'}
+  if($code-eq'7100'-or$code-eq'7200'){$included=$false;$reason='Replaced by smoothed rent/electricity accrual'}
   elseif($code-eq'7013'){$included=$false;$reason='Excluded staff nominal'}
   elseif($code-ge'7900'-and$code-le'7906' -and $code-ne'7901' -and $code-ne'7902' -and $code-ne'7905'){$included=$false;$reason='Interest/depreciation excluded from management costs'}
   elseif($code-ge'8000'-and$code-lt'8200'){$included=$false;$reason='Tax/dividend/accounting nominal excluded'}
-  if($code-ge'5000'-and$code-lt'6000'){$category='Stock Purchases'}
-  elseif($code-ge'7000'-and$code-le'7015'){$category='Staff'}
+  if($code-ge'7000'-and$code-le'7015'){$category='Staff'}
   elseif($code-ge'7100'-and$code-le'7203'){$category='Premises'}
   elseif($code-ge'7300'-and$code-le'7308'){$category='Vehicles'}
   elseif($code-ge'7900'-and$code-le'7906'){$category='Finance'}
