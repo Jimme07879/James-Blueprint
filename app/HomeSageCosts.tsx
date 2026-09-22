@@ -7,8 +7,7 @@ import { supabase } from '../lib/supabase';
 
 type CostRow={snapshot_date?:string|null;running_costs?:number|null;staff_costs?:number|null;premises_costs?:number|null;vehicle_costs?:number|null;admin_costs?:number|null;finance_costs?:number|null;rent_accrual?:number|null;electricity_accrual?:number|null;line_count?:number|null;cost_basis?:string|null};
 type ProfitRow={snapshot_date?:string|null;sales_net?:number|null;gross_profit?:number|null};
-type StockPurchaseRow={transaction_date?:string|null;normalized_cost?:number|null};
-type Snapshot={cost28:number;priorCost28:number;gp28:number;priorGp28:number;sales28:number;stockPurchases28:number;priorStockPurchases28:number;staff28:number;premises28:number;vehicle28:number;admin28:number;finance28:number;rent28:number;electric28:number;loading:boolean;error?:string};
+type Snapshot={cost28:number;priorCost28:number;gp28:number;priorGp28:number;sales28:number;priorSales28:number;staff28:number;premises28:number;vehicle28:number;admin28:number;finance28:number;rent28:number;electric28:number;loading:boolean;error?:string};
 
 const money=(n:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(n||0);
 const dateKey=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -20,7 +19,7 @@ export default function HomeSageCosts(){
   const [costHost,setCostHost]=useState<HTMLElement|null>(null);
   const [stockHost,setStockHost]=useState<HTMLElement|null>(null);
   const [netHost,setNetHost]=useState<HTMLElement|null>(null);
-  const [data,setData]=useState<Snapshot>({cost28:0,priorCost28:0,gp28:0,priorGp28:0,sales28:0,stockPurchases28:0,priorStockPurchases28:0,staff28:0,premises28:0,vehicle28:0,admin28:0,finance28:0,rent28:0,electric28:0,loading:true});
+  const [data,setData]=useState<Snapshot>({cost28:0,priorCost28:0,gp28:0,priorGp28:0,sales28:0,priorSales28:0,staff28:0,premises28:0,vehicle28:0,admin28:0,finance28:0,rent28:0,electric28:0,loading:true});
 
   useEffect(()=>{
     if(pathname!=='/')return;
@@ -63,29 +62,24 @@ export default function HomeSageCosts(){
     let cancelled=false;
     const load=async()=>{
       const start56=shift(-55);
-      const [costRes,profitRes,stockPurchaseRes]=await Promise.all([
+      const [costRes,profitRes]=await Promise.all([
         supabase.from('sage_running_cost_snapshots').select('snapshot_date,running_costs,staff_costs,premises_costs,vehicle_costs,admin_costs,finance_costs,rent_accrual,electricity_accrual,line_count,cost_basis').gte('snapshot_date',start56).order('snapshot_date',{ascending:false}),
-        supabase.from('sage_profit_snapshots').select('snapshot_date,sales_net,gross_profit').gte('snapshot_date',start56).order('snapshot_date',{ascending:false}),
-        supabase.from('sage_cost_transactions').select('transaction_date,normalized_cost').eq('category','Stock Purchases').gte('transaction_date',start56).order('transaction_date',{ascending:false})
+        supabase.from('sage_profit_snapshots').select('snapshot_date,sales_net,gross_profit').gte('snapshot_date',start56).order('snapshot_date',{ascending:false})
       ]);
       if(cancelled)return;
-      const error=costRes.error||profitRes.error||stockPurchaseRes.error;
+      const error=costRes.error||profitRes.error;
       if(error){setData(d=>({...d,loading:false,error:error.message}));return;}
       const costs=(costRes.data||[]) as CostRow[];
       const profits=(profitRes.data||[]) as ProfitRow[];
-      const stockPurchases=(stockPurchaseRes.data||[]) as StockPurchaseRow[];
       const start28=shift(-27),tomorrow=shift(1);
       const currentCosts=costs.filter(r=>{const d=r.snapshot_date||'';return d>=start28&&d<tomorrow});
       const priorCosts=costs.filter(r=>{const d=r.snapshot_date||'';return d>=start56&&d<start28});
       const currentProfit=profits.filter(r=>{const d=r.snapshot_date||'';return d>=start28&&d<tomorrow});
       const priorProfit=profits.filter(r=>{const d=r.snapshot_date||'';return d>=start56&&d<start28});
-      const currentStockPurchases=stockPurchases.filter(r=>{const d=r.transaction_date||'';return d>=start28&&d<tomorrow});
-      const priorStockPurchases=stockPurchases.filter(r=>{const d=r.transaction_date||'';return d>=start56&&d<start28});
       setData({
         cost28:sum(currentCosts,'running_costs'),priorCost28:sum(priorCosts,'running_costs'),
         gp28:currentProfit.reduce((n,r)=>n+(Number(r.gross_profit)||0),0),priorGp28:priorProfit.reduce((n,r)=>n+(Number(r.gross_profit)||0),0),
-        sales28:currentProfit.reduce((n,r)=>n+(Number(r.sales_net)||0),0),
-        stockPurchases28:currentStockPurchases.reduce((n,r)=>n+(Number(r.normalized_cost)||0),0),priorStockPurchases28:priorStockPurchases.reduce((n,r)=>n+(Number(r.normalized_cost)||0),0),
+        sales28:currentProfit.reduce((n,r)=>n+(Number(r.sales_net)||0),0),priorSales28:priorProfit.reduce((n,r)=>n+(Number(r.sales_net)||0),0),
         staff28:sum(currentCosts,'staff_costs'),premises28:sum(currentCosts,'premises_costs'),vehicle28:sum(currentCosts,'vehicle_costs'),admin28:sum(currentCosts,'admin_costs'),finance28:sum(currentCosts,'finance_costs'),rent28:sum(currentCosts,'rent_accrual'),electric28:sum(currentCosts,'electricity_accrual'),loading:false
       });
     };
@@ -95,7 +89,9 @@ export default function HomeSageCosts(){
   const net=data.gp28-data.cost28;
   const priorNet=data.priorGp28-data.priorCost28;
   const costTrend=data.priorCost28?((data.cost28-data.priorCost28)/Math.abs(data.priorCost28))*100:null;
-  const stockPurchaseTrend=data.priorStockPurchases28?((data.stockPurchases28-data.priorStockPurchases28)/Math.abs(data.priorStockPurchases28))*100:null;
+  const stockCost=data.sales28-data.gp28;
+  const priorStockCost=data.priorSales28-data.priorGp28;
+  const stockCostTrend=priorStockCost?((stockCost-priorStockCost)/Math.abs(priorStockCost))*100:null;
   const netTrend=priorNet?((net-priorNet)/Math.abs(priorNet))*100:null;
   const netMargin=data.sales28?(net/data.sales28)*100:0;
 
@@ -108,10 +104,10 @@ export default function HomeSageCosts(){
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Rent {money(data.rent28)} + electricity {money(data.electric28)} smoothed from trailing 12 months.</small>}
     </>,costHost)}
     {stockHost&&createPortal(<>
-      <span>28-day stock purchases · Sage</span>
-      <strong>{data.loading?'—':money(data.stockPurchases28)}</strong>
-      <small className={stockPurchaseTrend!=null&&stockPurchaseTrend>0?'pulseBad':'pulseGood'}>{data.error?'Stock purchases unavailable':stockPurchaseTrend==null?'Cash and inventory view':`${stockPurchaseTrend>=0?'+':''}${stockPurchaseTrend.toFixed(1)}% vs previous 28`}</small>
-      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Shown separately · already reflected in gross profit, so not deducted again.</small>}
+      <span>28-day stock cost · Sage</span>
+      <strong>{data.loading?'—':money(stockCost)}</strong>
+      <small className={stockCostTrend!=null&&stockCostTrend>0?'pulseBad':'pulseGood'}>{data.error?'Stock cost unavailable':stockCostTrend==null?'Sales less gross profit':`${stockCostTrend>=0?'+':''}${stockCostTrend.toFixed(1)}% vs previous 28`}</small>
+      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Sales minus gross profit · already deducted before management profit.</small>}
     </>,stockHost)}
     {netHost&&createPortal(<>
       <span>28-day net profit · Management</span>
