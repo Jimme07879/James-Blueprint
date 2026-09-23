@@ -8,7 +8,21 @@ function Get-Field([hashtable]$row,[string[]]$names){
 function Decimal-Or-Zero($value){if($null -eq $value){return [decimal]0};try{return [decimal]$value}catch{return [decimal]0}}
 function Int-Or-Null($value){if($null -eq $value){return $null};try{return [int]$value}catch{return $null}}
 function Date-Or-Null($value){if($null -eq $value){return $null};try{return ([datetime]$value).ToString('yyyy-MM-dd')}catch{return $null}}
-function Read-Table($connection,[string]$sql){$cmd=$connection.CreateCommand();$cmd.CommandText=$sql;$reader=$cmd.ExecuteReader();$rows=@();while($reader.Read()){$row=@{};for($i=0;$i -lt $reader.FieldCount;$i++){$field=$reader.GetName($i).ToUpperInvariant();$row[$field]=if($reader.IsDBNull($i)){$null}else{$reader.GetValue($i)}};$rows+=,$row};$reader.Close();return $rows}
+function Read-Table($connection,[string]$sql){
+  $cmd=$connection.CreateCommand();$cmd.CommandText=$sql
+  $reader=$cmd.ExecuteReader();$rows=New-Object System.Collections.ArrayList
+  try{
+    while($reader.Read()){
+      $row=@{}
+      for($i=0;$i -lt $reader.FieldCount;$i++){
+        $field=$reader.GetName($i).ToUpperInvariant()
+        $row[$field]=if($reader.IsDBNull($i)){$null}else{$reader.GetValue($i)}
+      }
+      [void]$rows.Add($row)
+    }
+  }finally{$reader.Close();$cmd.Dispose()}
+  return $rows.ToArray()
+}
 function Send-Blueprint($config,$payload){$body=@{p_bridge_key=$config.BridgeKey;p_payload=$payload}|ConvertTo-Json -Depth 10 -Compress;$headers=@{apikey=$config.SupabaseAnonKey;Authorization="Bearer $($config.SupabaseAnonKey)"};$uri="$($config.SupabaseUrl.TrimEnd('/'))/rest/v1/rpc/sage_bridge_ingest";return Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($body))}
 function Send-Blueprint-Costs($config,$payload){$body=@{p_bridge_key=$config.BridgeKey;p_payload=$payload}|ConvertTo-Json -Depth 10 -Compress;$headers=@{apikey=$config.SupabaseAnonKey;Authorization="Bearer $($config.SupabaseAnonKey)"};$uri="$($config.SupabaseUrl.TrimEnd('/'))/rest/v1/rpc/sage_bridge_ingest_costs";return Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($body))}
 function Send-Blueprint-Stock($config,$payload){$body=@{p_bridge_key=$config.BridgeKey;p_payload=$payload}|ConvertTo-Json -Depth 10 -Compress;$headers=@{apikey=$config.SupabaseAnonKey;Authorization="Bearer $($config.SupabaseAnonKey)"};$uri="$($config.SupabaseUrl.TrimEnd('/'))/rest/v1/rpc/sage_bridge_ingest_stock";return Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType "application/json; charset=utf-8" -Body ([System.Text.Encoding]::UTF8.GetBytes($body))}
