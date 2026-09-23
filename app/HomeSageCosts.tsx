@@ -32,23 +32,31 @@ export default function HomeSageCosts(){
       const grid=document.querySelector('.businessPulse .pulseGrid');
       if(!grid)return;
       const sageProfit=grid.querySelector<HTMLElement>("[data-blueprint-sage-profit='true']");
-      if(!costInserted){
-        costInserted=document.createElement('div');
-        costInserted.dataset.blueprintSageCosts='true';
-        if(sageProfit?.nextSibling)grid.insertBefore(costInserted,sageProfit.nextSibling);else grid.appendChild(costInserted);
-        setCostHost(costInserted);
-      }
       if(!stockInserted){
         stockInserted=document.createElement('div');
         stockInserted.dataset.blueprintSageStockPurchases='true';
-        if(costInserted.nextSibling)grid.insertBefore(stockInserted,costInserted.nextSibling);else grid.appendChild(stockInserted);
+        grid.appendChild(stockInserted);
         setStockHost(stockInserted);
+      }
+      if(!costInserted){
+        costInserted=document.createElement('div');
+        costInserted.dataset.blueprintSageCosts='true';
+        grid.appendChild(costInserted);
+        setCostHost(costInserted);
       }
       if(!netInserted){
         netInserted=document.createElement('div');
         netInserted.dataset.blueprintSageNet='true';
-        if(stockInserted.nextSibling)grid.insertBefore(netInserted,stockInserted.nextSibling);else grid.appendChild(netInserted);
+        grid.appendChild(netInserted);
         setNetHost(netInserted);
+      }
+
+      // Keep the finance cards in commercial calculation order:
+      // sales → stock cost → gross profit → running costs → net profit.
+      if(sageProfit){
+        if(stockInserted.nextSibling!==sageProfit)grid.insertBefore(stockInserted,sageProfit);
+        if(sageProfit.nextSibling!==costInserted)grid.insertBefore(costInserted,sageProfit.nextSibling);
+        if(costInserted.nextSibling!==netInserted)grid.insertBefore(netInserted,costInserted.nextSibling);
       }
     };
     attach();
