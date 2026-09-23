@@ -68,7 +68,36 @@ $financialYearStart=[datetime]'2026-04-01'
 $profitFromDate=$financialYearStart.ToString('yyyy-MM-dd')
 $profitSql="SELECT I.INVOICE_DATE AS INVOICE_DATE, I.INVOICE_OR_CREDIT AS INVOICE_OR_CREDIT, II.NET_AMOUNT, II.QUANTITY, II.STOCK_CODE, S.AVERAGE_COST_PRICE FROM (INVOICE I INNER JOIN INVOICE_ITEM II ON I.INVOICE_NUMBER=II.INVOICE_NUMBER) LEFT JOIN STOCK S ON II.STOCK_CODE=S.STOCK_CODE WHERE I.INVOICE_DATE >= {d '$profitFromDate'} AND (I.INVOICE_OR_CREDIT='Invoice' OR I.INVOICE_OR_CREDIT='Credit Note')"
 Write-Host ("Blueprint gross profit scan: {0} to today - invoices minus credit notes" -f $profitFromDate) -ForegroundColor Cyan
-$profitRows=Read-Table $conn $profitSql;$daily=@{};foreach($row in $profitRows){$date=Date-Or-Null (Get-Field $row @('INVOICE_DATE'));if([string]::IsNullOrWhiteSpace($date)){continue};$docType=[string](Get-Field $row @('INVOICE_OR_CREDIT'));$sign=if($docType.Trim().ToUpperInvariant() -eq 'CREDIT NOTE'){[decimal]-1}else{[decimal]1};$net=(Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT')))*$sign;$qty=Decimal-Or-Zero (Get-Field $row @('QUANTITY'));$avg=Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE'));$cost=($qty*$avg)*$sign;if(!$daily.ContainsKey($date)){$daily[$date]=@{sales=[decimal]0;cost=[decimal]0;lines=0}};$daily[$date].sales+=$net;$daily[$date].cost+=$cost;$daily[$date].lines++};$snapshots=@();foreach($date in $daily.Keys){$sales=[decimal]$daily[$date].sales;$cost=[decimal]$daily[$date].cost;$gp=$sales-$cost;$pct=if($sales-ne0){($gp/$sales)*100}else{0};$snapshots+=@{snapshot_date=$date;sales_net=[math]::Round($sales,2);cost_of_goods=[math]::Round($cost,2);gross_profit=[math]::Round($gp,2);gross_profit_pct=[math]::Round($pct,2);line_count=$daily[$date].lines;cost_basis='STOCK.AVERAGE_COST_PRICE'}};$profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Office Sage 50';bridge_version='6.7-financial-year';message='Read-only Sage financial-year invoice/credit gross-profit snapshot sync completed';snapshots=$snapshots};Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} invoice/credit lines" -f $snapshots.Count,$profitRows.Count) -ForegroundColor Green
+$profitRows=Read-Table $conn $profitSql
+$daily=@{};$invoiceLineCount=0;$creditLineCount=0;$invoiceNet=[decimal]0;$creditNet=[decimal]0
+foreach($row in $profitRows){
+  $date=Date-Or-Null (Get-Field $row @('INVOICE_DATE'))
+  if([string]::IsNullOrWhiteSpace($date)){continue}
+  $docType=([string](Get-Field $row @('INVOICE_OR_CREDIT'))).Trim().ToUpperInvariant()
+  $rawNet=Decimal-Or-Zero (Get-Field $row @('NET_AMOUNT'))
+  $qty=Decimal-Or-Zero (Get-Field $row @('QUANTITY'))
+  $avg=Decimal-Or-Zero (Get-Field $row @('AVERAGE_COST_PRICE'))
+  if($docType-eq'CREDIT NOTE'){
+    # Sage INVOICE_ITEM.NET_AMOUNT is already negative for credits on this installation.
+    # Force one negative sign for both sales and cost, regardless of quantity sign.
+    $net=-[math]::Abs($rawNet);$cost=-[math]::Abs($qty)*$avg
+    $creditLineCount++;$creditNet+=$net
+  }else{
+    $net=$rawNet;$cost=$qty*$avg
+    $invoiceLineCount++;$invoiceNet+=$net
+  }
+  if(!$daily.ContainsKey($date)){$daily[$date]=@{sales=[decimal]0;cost=[decimal]0;lines=0}}
+  $daily[$date].sales+=$net;$daily[$date].cost+=$cost;$daily[$date].lines++
+}
+$snapshots=@()
+foreach($date in $daily.Keys){
+  $sales=[decimal]$daily[$date].sales;$cost=[decimal]$daily[$date].cost
+  $gp=$sales-$cost;$pct=if($sales-ne0){($gp/$sales)*100}else{0}
+  $snapshots+=@{snapshot_date=$date;sales_net=[math]::Round($sales,2);cost_of_goods=[math]::Round($cost,2);gross_profit=[math]::Round($gp,2);gross_profit_pct=[math]::Round($pct,2);line_count=$daily[$date].lines;cost_basis='STOCK.AVERAGE_COST_PRICE'}
+}
+Write-Host ("Blueprint profit scan: {0} invoice lines net {1:N2}; {2} credit lines net {3:N2}; combined {4:N2}" -f $invoiceLineCount,$invoiceNet,$creditLineCount,$creditNet,($invoiceNet+$creditNet)) -ForegroundColor Cyan
+$profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Office Sage 50';bridge_version='6.10-signed-credit-lines';message='Read-only Sage financial-year invoice/credit gross-profit snapshot sync completed';snapshots=$snapshots}
+Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} invoice/credit lines" -f $snapshots.Count,$profitRows.Count) -ForegroundColor Green
 
 # Management running costs: actual Sage nominal movements, with lumpy rent/electricity replaced by trailing-12-month daily accruals.
 # Stock purchases/COGS are excluded because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
