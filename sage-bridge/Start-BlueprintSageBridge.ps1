@@ -66,9 +66,14 @@ $auditRows=Read-Table $conn "SELECT * FROM AUDIT_HEADER";$transactions=@();forea
 # Include invoices and credit notes only. Credits reverse both sales and cost so GP reconciles on the same commercial basis; quotations are excluded.
 $financialYearStart=[datetime]'2026-04-01'
 $profitFromDate=$financialYearStart.ToString('yyyy-MM-dd')
-$profitSql="SELECT I.INVOICE_DATE AS INVOICE_DATE, I.INVOICE_OR_CREDIT AS INVOICE_OR_CREDIT, II.NET_AMOUNT, II.QUANTITY, II.STOCK_CODE, S.AVERAGE_COST_PRICE FROM (INVOICE I INNER JOIN INVOICE_ITEM II ON I.INVOICE_NUMBER=II.INVOICE_NUMBER) LEFT JOIN STOCK S ON II.STOCK_CODE=S.STOCK_CODE WHERE I.INVOICE_DATE >= {d '$profitFromDate'} AND (I.INVOICE_OR_CREDIT='Invoice' OR I.INVOICE_OR_CREDIT='Credit Note')"
+$profitSqlBase="SELECT I.INVOICE_DATE AS INVOICE_DATE, I.INVOICE_OR_CREDIT AS INVOICE_OR_CREDIT, II.NET_AMOUNT, II.QUANTITY, II.STOCK_CODE, S.AVERAGE_COST_PRICE FROM (INVOICE I INNER JOIN INVOICE_ITEM II ON I.INVOICE_NUMBER=II.INVOICE_NUMBER) LEFT JOIN STOCK S ON II.STOCK_CODE=S.STOCK_CODE WHERE I.INVOICE_DATE >= {d '$profitFromDate'} AND I.INVOICE_OR_CREDIT="
 Write-Host ("Blueprint gross profit scan: {0} to today - invoices minus credit notes" -f $profitFromDate) -ForegroundColor Cyan
-$profitRows=Read-Table $conn $profitSql
+# Read each document type explicitly. This prevents an incomplete type from silently taking
+# the place of the other when mixed-date snapshots are upserted by the bridge.
+$invoiceRows=@(Read-Table $conn ($profitSqlBase+"'Invoice'"))
+$creditRows=@(Read-Table $conn ($profitSqlBase+"'Credit Note'"))
+$profitRows=@($invoiceRows)+@($creditRows)
+Write-Host ("Blueprint Sage scan read {0} invoice lines and {1} credit lines" -f $invoiceRows.Count,$creditRows.Count) -ForegroundColor Cyan
 $daily=@{};$invoiceLineCount=0;$creditLineCount=0;$invoiceNet=[decimal]0;$creditNet=[decimal]0
 foreach($row in $profitRows){
   $date=Date-Or-Null (Get-Field $row @('INVOICE_DATE'))
