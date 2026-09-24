@@ -112,7 +112,7 @@ export default function HomeSageCosts(){
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Rent {money(data.rent28)} + electricity {money(data.electric28)} smoothed from trailing 12 months.</small>}
     </>,costHost)}
     {stockHost&&createPortal(<>
-      <span>28-day stock cost · Sage</span>
+      <span>28-day cost of goods sold · Sage</span>
       <strong>{data.loading?'—':money(stockCost)}</strong>
       <small className={stockCostTrend!=null&&stockCostTrend>0?'pulseBad':'pulseGood'}>{data.error?'Stock cost unavailable':stockCostTrend==null?'Sales less gross profit':`${stockCostTrend>=0?'+':''}${stockCostTrend.toFixed(1)}% vs previous 28`}</small>
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Sales minus gross profit · already deducted before management profit.</small>}
