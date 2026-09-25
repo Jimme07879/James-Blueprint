@@ -124,7 +124,7 @@ Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} 
 # Interest and depreciation are excluded from management running costs; bank/card charges remain operating costs.
 $costFromDate=$financialYearStart.ToString('yyyy-MM-dd')
 $annualFromDate=(Get-Date).Date.AddDays(-364).ToString('yyyy-MM-dd')
-$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '5000' AND NOMINAL_CODE < '9000'"
+$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND ((NOMINAL_CODE >= '5000' AND NOMINAL_CODE < '6000') OR (NOMINAL_CODE >= '7000' AND NOMINAL_CODE < '9000'))"
 $annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND NOMINAL_CODE='7200'"
 $nominalNames=@{};try{$nominalRows=Read-Table $conn "SELECT * FROM NOMINAL_LEDGER";foreach($n in $nominalRows){$nCode=[string](Get-Field $n @('ACCOUNT_REF','NOMINAL_CODE','CODE'));$nName=[string](Get-Field $n @('NAME','ACCOUNT_NAME','DESCRIPTION'));if(![string]::IsNullOrWhiteSpace($nCode)){$nominalNames[$nCode.Trim()]=$nName.Trim()}}}catch{Write-Host "Nominal account names unavailable; codes will still sync." -ForegroundColor Yellow}
 # Rent uses the current agreed monthly charge rather than a trailing-12-month average that included the older rate.
