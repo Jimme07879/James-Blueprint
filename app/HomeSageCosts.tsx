@@ -14,6 +14,16 @@ const money=(n:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency
 const dateKey=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const shift=(days:number)=>{const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+days);return dateKey(d)};
 const sum=(rows:CostRow[],key:keyof CostRow)=>rows.reduce((n,r)=>n+(Number(r[key])||0),0);
+const previousMonthEnd=()=>{
+  const today=new Date();
+  today.setHours(12,0,0,0);
+  const day=today.getDate();
+  today.setDate(1);
+  today.setMonth(today.getMonth()-1);
+  const lastDay=new Date(today.getFullYear(),today.getMonth()+1,0).getDate();
+  today.setDate(Math.min(day,lastDay));
+  return today;
+};
 
 export default function HomeSageCosts(){
   const pathname=usePathname();
@@ -80,9 +90,14 @@ export default function HomeSageCosts(){
     let cancelled=false;
     const load=async()=>{
       const start56=shift(-55);
+      const comparisonEnd=previousMonthEnd();
+      const comparisonStart=new Date(comparisonEnd);
+      comparisonStart.setDate(comparisonStart.getDate()-27);
+      const comparisonEndKey=dateKey(comparisonEnd),comparisonStartKey=dateKey(comparisonStart);
+      const costQueryStart=comparisonStartKey<start56?comparisonStartKey:start56;
       const [costRes,profitRes,purchaseRes]=await Promise.all([
-        supabase.from('sage_running_cost_snapshots').select('snapshot_date,running_costs,staff_costs,premises_costs,vehicle_costs,admin_costs,finance_costs,rent_accrual,electricity_accrual,line_count,cost_basis').gte('snapshot_date',start56).order('snapshot_date',{ascending:false}),
-        supabase.from('sage_profit_snapshots').select('snapshot_date,sales_net,gross_profit').gte('snapshot_date',start56).order('snapshot_date',{ascending:false}),
+        supabase.from('sage_running_cost_snapshots').select('snapshot_date,running_costs,staff_costs,premises_costs,vehicle_costs,admin_costs,finance_costs,rent_accrual,electricity_accrual,line_count,cost_basis').gte('snapshot_date',costQueryStart).order('snapshot_date',{ascending:false}),
+        supabase.from('sage_profit_snapshots').select('snapshot_date,sales_net,gross_profit').gte('snapshot_date',costQueryStart).order('snapshot_date',{ascending:false}),
         supabase.from('sage_cost_transactions').select('transaction_date,normalized_cost').eq('category','Stock purchases').gte('transaction_date',start56).order('transaction_date',{ascending:false})
       ]);
       if(cancelled)return;
@@ -93,9 +108,9 @@ export default function HomeSageCosts(){
       const purchases=(purchaseRes.data||[]) as PurchaseRow[];
       const start28=shift(-27),tomorrow=shift(1);
       const currentCosts=costs.filter(r=>{const d=r.snapshot_date||'';return d>=start28&&d<tomorrow});
-      const priorCosts=costs.filter(r=>{const d=r.snapshot_date||'';return d>=start56&&d<start28});
+      const priorCosts=costs.filter(r=>{const d=r.snapshot_date||'';return d>=comparisonStartKey&&d<=comparisonEndKey});
       const currentProfit=profits.filter(r=>{const d=r.snapshot_date||'';return d>=start28&&d<tomorrow});
-      const priorProfit=profits.filter(r=>{const d=r.snapshot_date||'';return d>=start56&&d<start28});
+      const priorProfit=profits.filter(r=>{const d=r.snapshot_date||'';return d>=comparisonStartKey&&d<=comparisonEndKey});
       const currentPurchases=purchases.filter(r=>{const d=r.transaction_date||'';return d>=start28&&d<tomorrow});
       const priorPurchases=purchases.filter(r=>{const d=r.transaction_date||'';return d>=start56&&d<start28});
       setData({
@@ -130,7 +145,7 @@ export default function HomeSageCosts(){
     {costHost&&createPortal(<>
       <span>28-day running costs · Sage</span>
       <strong>{data.loading?'—':money(data.cost28)}</strong>
-      <small className={costTrend!=null&&costTrend>0?'pulseBad':'pulseGood'}>{data.error?'Sage costs unavailable':costTrend==null?'Management cost basis':`${costTrend>=0?'+':''}${costTrend.toFixed(1)}% vs previous 28`}</small>
+      <small className={costTrend!=null&&costTrend>0?'pulseBad':'pulseGood'}>{data.error?'Sage costs unavailable':costTrend==null?'Management cost basis':`${costTrend>=0?'+':''}${costTrend.toFixed(1)}% vs same 28 days last month`}</small>
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Staff {money(data.staff28)} · Premises (rent + electricity) {money(data.premises28)} · Vehicles {money(data.vehicle28)}</small>}
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Rent {money(data.rent28)} + electricity {money(data.electric28)} smoothed from trailing 12 months.</small>}
     </>,costHost)}
@@ -143,7 +158,7 @@ export default function HomeSageCosts(){
     {netHost&&createPortal(<>
       <span>28-day net profit · Management</span>
       <strong>{data.loading?'—':money(net)}</strong>
-      <small className={net<0?'pulseBad':'pulseGood'}>{data.error?'Net profit unavailable':`${netMargin.toFixed(1)}% net margin${netTrend==null?'':` · ${netTrend>=0?'+':''}${netTrend.toFixed(1)}% vs previous 28`}`}</small>
+      <small className={net<0?'pulseBad':'pulseGood'}>{data.error?'Net profit unavailable':`${netMargin.toFixed(1)}% net margin${netTrend==null?'':` · ${netTrend>=0?'+':''}${netTrend.toFixed(1)}% vs same 28 days last month`}`}</small>
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Gross profit less running costs · before corporation tax/dividends</small>}
       {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Interest and depreciation excluded from management running costs.</small>}
     </>,netHost)}
