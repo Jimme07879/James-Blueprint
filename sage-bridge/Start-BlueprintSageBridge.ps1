@@ -119,11 +119,12 @@ $profitResult=Send-Blueprint $config @{kind='profit_snapshots';bridge_name='Offi
 Write-Host ("Blueprint gross profit sync complete: {0} daily snapshots from {1} invoice/credit lines" -f $snapshots.Count,$profitRows.Count) -ForegroundColor Green
 
 # Management running costs: actual Sage nominal movements, with lumpy rent/electricity replaced by trailing-12-month daily accruals.
-# Stock purchases/COGS are excluded because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
+# Stock-purchase nominal movements (5000-5999) are synced for a separate dashboard card but excluded from running costs,
+# because product cost is already reflected in gross profit. Corporation tax/dividends are outside this range.
 # Interest and depreciation are excluded from management running costs; bank/card charges remain operating costs.
 $costFromDate=$financialYearStart.ToString('yyyy-MM-dd')
 $annualFromDate=(Get-Date).Date.AddDays(-364).ToString('yyyy-MM-dd')
-$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '7000' AND NOMINAL_CODE < '9000'"
+$costRows=Read-Table $conn "SELECT * FROM AUDIT_SPLIT WHERE DATE >= {d '$costFromDate'} AND NOMINAL_CODE >= '5000' AND NOMINAL_CODE < '9000'"
 $annualRows=Read-Table $conn "SELECT DATE, TYPE, NOMINAL_CODE, NET_AMOUNT FROM AUDIT_SPLIT WHERE DATE >= {d '$annualFromDate'} AND NOMINAL_CODE='7200'"
 $nominalNames=@{};try{$nominalRows=Read-Table $conn "SELECT * FROM NOMINAL_LEDGER";foreach($n in $nominalRows){$nCode=[string](Get-Field $n @('ACCOUNT_REF','NOMINAL_CODE','CODE'));$nName=[string](Get-Field $n @('NAME','ACCOUNT_NAME','DESCRIPTION'));if(![string]::IsNullOrWhiteSpace($nCode)){$nominalNames[$nCode.Trim()]=$nName.Trim()}}}catch{Write-Host "Nominal account names unavailable; codes will still sync." -ForegroundColor Yellow}
 # Rent uses the current agreed monthly charge rather than a trailing-12-month average that included the older rate.
@@ -141,11 +142,13 @@ foreach($row in $costRows){
   $code=[string](Get-Field $row @('NOMINAL_CODE'));$type=[string](Get-Field $row @('TYPE'))
   $value=Normalized-Cost $type (Get-Field $row @('NET_AMOUNT'))
   $included=$true;$reason=$null
-  if($code-eq'7100'-or$code-eq'7200'){$included=$false;$reason='Replaced by smoothed rent/electricity accrual'}
+  if($code-ge'5000'-and$code-lt'6000'){$included=$false;$reason='Stock purchases shown separately; COGS already deducted before gross profit'}
+  elseif($code-eq'7100'-or$code-eq'7200'){$included=$false;$reason='Replaced by smoothed rent/electricity accrual'}
   elseif($code-eq'7013'){$included=$false;$reason='Excluded staff nominal'}
   elseif($code-ge'7900'-and$code-le'7906' -and $code-ne'7901' -and $code-ne'7902' -and $code-ne'7905'){$included=$false;$reason='Interest/depreciation excluded from management costs'}
   elseif($code-ge'8000'-and$code-lt'8200'){$included=$false;$reason='Tax/dividend/accounting nominal excluded'}
-  if($code-ge'7000'-and$code-le'7015'){$category='Staff'}
+  if($code-ge'5000'-and$code-lt'6000'){$category='Stock purchases'}
+  elseif($code-ge'7000'-and$code-le'7015'){$category='Staff'}
   elseif($code-ge'7100'-and$code-le'7203'){$category='Premises'}
   elseif($code-ge'7300'-and$code-le'7308'){$category='Vehicles'}
   elseif($code-ge'7900'-and$code-le'7906'){$category='Finance'}
@@ -167,7 +170,7 @@ foreach($row in $costRows){
   }
 }
 $costSnapshots=@();foreach($date in $costDaily.Keys){$staff=[decimal]$costDaily[$date].staff;$prem=[decimal]$costDaily[$date].premises+$dailyRent+$dailyElectricity;$vehicle=[decimal]$costDaily[$date].vehicle;$admin=[decimal]$costDaily[$date].admin;$finance=[decimal]$costDaily[$date].finance;$total=$staff+$prem+$vehicle+$admin+$finance;$costSnapshots+=@{snapshot_date=$date;running_costs=[math]::Round($total,2);staff_costs=[math]::Round($staff,2);premises_costs=[math]::Round($prem,2);vehicle_costs=[math]::Round($vehicle,2);admin_costs=[math]::Round($admin,2);finance_costs=[math]::Round($finance,2);rent_accrual=[math]::Round($dailyRent,2);electricity_accrual=[math]::Round($dailyElectricity,2);line_count=$costDaily[$date].lines;cost_basis='Actual Sage nominal movements; rent at current monthly charge; electricity smoothed from trailing 365 days; interest/depreciation excluded'}}
-$costResult=Send-Blueprint $config @{kind='running_cost_snapshots';bridge_name='Office Sage 50';bridge_version='6.8-current-rent';message='Read-only Sage financial-year management running-cost snapshot sync completed';snapshots=$costSnapshots};Write-Host ("Blueprint running cost sync complete: {0} daily snapshots | monthly rent {1:N2} | annual electricity {2:N2}" -f $costSnapshots.Count,$monthlyRent,$annualElectricity) -ForegroundColor Green
+$costResult=Send-Blueprint $config @{kind='running_cost_snapshots';bridge_name='Office Sage 50';bridge_version='6.11-stock-purchases';message='Read-only Sage financial-year management costs and stock-purchase snapshot sync completed';snapshots=$costSnapshots};Write-Host ("Blueprint running cost sync complete: {0} daily snapshots | monthly rent {1:N2} | annual electricity {2:N2}" -f $costSnapshots.Count,$monthlyRent,$annualElectricity) -ForegroundColor Green
 $costKeys=@($costTransactions|ForEach-Object{$_.cost_key});$costTransactionResults=Send-Costs-In-Chunks $config $costTransactions 500;$costTransactionCleanup=Send-Blueprint-Costs $config @{costs=@();active_cost_keys=$costKeys};Write-Host ("Blueprint individual cost sync complete: {0} Sage entries" -f $costTransactions.Count) -ForegroundColor Green
 
 @{customers=$customerResult;stock=$stockResult;transaction_batches=$txResults.Count;transactions_cleanup=$txCleanupResult;profit=$profitResult;running_costs=$costResult;cost_transaction_batches=$costTransactionResults.Count;cost_transactions_cleanup=$costTransactionCleanup}|ConvertTo-Json -Depth 5
