@@ -8,7 +8,7 @@ import { supabase } from '../lib/supabase';
 type CostRow={snapshot_date?:string|null;running_costs?:number|null;staff_costs?:number|null;premises_costs?:number|null;vehicle_costs?:number|null;admin_costs?:number|null;finance_costs?:number|null;rent_accrual?:number|null;electricity_accrual?:number|null;line_count?:number|null;cost_basis?:string|null};
 type ProfitRow={snapshot_date?:string|null;sales_net?:number|null;gross_profit?:number|null};
 type PurchaseRow={transaction_date?:string|null;normalized_cost?:number|null};
-type Snapshot={cost28:number;priorCost28:number;purchases28:number;priorPurchases28:number;purchasesLoaded:boolean;gp28:number;priorGp28:number;sales28:number;priorSales28:number;staff28:number;premises28:number;vehicle28:number;admin28:number;finance28:number;rent28:number;electric28:number;loading:boolean;error?:string};
+type Snapshot={cost28:number;priorCost28:number;purchases28:number;priorPurchases28:number;purchasesLoaded:boolean;gp28:number;priorGp28:number;sales28:number;priorSales28:number;staff28:number;staffBasis:string;premises28:number;vehicle28:number;admin28:number;finance28:number;rent28:number;electric28:number;loading:boolean;error?:string};
 
 const money=(n:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:0}).format(n||0);
 const dateKey=(d:Date)=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -31,7 +31,7 @@ export default function HomeSageCosts(){
   const [purchaseHost,setPurchaseHost]=useState<HTMLElement|null>(null);
   const [stockHost,setStockHost]=useState<HTMLElement|null>(null);
   const [netHost,setNetHost]=useState<HTMLElement|null>(null);
-  const [data,setData]=useState<Snapshot>({cost28:0,priorCost28:0,purchases28:0,priorPurchases28:0,purchasesLoaded:false,gp28:0,priorGp28:0,sales28:0,priorSales28:0,staff28:0,premises28:0,vehicle28:0,admin28:0,finance28:0,rent28:0,electric28:0,loading:true});
+  const [data,setData]=useState<Snapshot>({cost28:0,priorCost28:0,purchases28:0,priorPurchases28:0,purchasesLoaded:false,gp28:0,priorGp28:0,sales28:0,priorSales28:0,staff28:0,staffBasis:'',premises28:0,vehicle28:0,admin28:0,finance28:0,rent28:0,electric28:0,loading:true});
 
   useEffect(()=>{
     if(pathname!=='/')return;
@@ -94,7 +94,14 @@ export default function HomeSageCosts(){
       const comparisonStart=new Date(comparisonEnd);
       comparisonStart.setDate(comparisonStart.getDate()-27);
       const comparisonEndKey=dateKey(comparisonEnd),comparisonStartKey=dateKey(comparisonStart);
-      const costQueryStart=comparisonStartKey<start56?comparisonStartKey:start56;
+      const currentMonthStart=new Date();
+      currentMonthStart.setHours(12,0,0,0);
+      currentMonthStart.setDate(1);
+      const currentMonthStartKey=dateKey(currentMonthStart);
+      const staffHistoryStart=new Date(currentMonthStart);
+      staffHistoryStart.setMonth(staffHistoryStart.getMonth()-4);
+      const staffHistoryStartKey=dateKey(staffHistoryStart);
+      const costQueryStart=[comparisonStartKey,start56,staffHistoryStartKey].sort()[0];
       const [costRes,profitRes,purchaseRes]=await Promise.all([
         supabase.from('sage_running_cost_snapshots').select('snapshot_date,running_costs,staff_costs,premises_costs,vehicle_costs,admin_costs,finance_costs,rent_accrual,electricity_accrual,line_count,cost_basis').gte('snapshot_date',costQueryStart).order('snapshot_date',{ascending:false}),
         supabase.from('sage_profit_snapshots').select('snapshot_date,sales_net,gross_profit').gte('snapshot_date',costQueryStart).order('snapshot_date',{ascending:false}),
@@ -113,12 +120,27 @@ export default function HomeSageCosts(){
       const priorProfit=profits.filter(r=>{const d=r.snapshot_date||'';return d>=comparisonStartKey&&d<=comparisonEndKey});
       const currentPurchases=purchases.filter(r=>{const d=r.transaction_date||'';return d>=start28&&d<tomorrow});
       const priorPurchases=purchases.filter(r=>{const d=r.transaction_date||'';return d>=start56&&d<start28});
+      const monthlyStaff=new Map<string,number>();
+      costs.forEach(r=>{
+        const d=r.snapshot_date||'';
+        if(!d||d>=currentMonthStartKey)return;
+        const month=d.slice(0,7);
+        monthlyStaff.set(month,(monthlyStaff.get(month)||0)+(Number(r.staff_costs)||0));
+      });
+      const staffMonths=Array.from(monthlyStaff.entries()).filter(([,value])=>Math.abs(value)>0.005).sort(([a],[b])=>b.localeCompare(a));
+      const actualCurrentStaff=sum(currentCosts,'staff_costs');
+      const actualPriorStaff=sum(priorCosts,'staff_costs');
+      const currentStaffBasis=staffMonths[0]?.[1]??actualCurrentStaff;
+      const priorStaffBasis=staffMonths[1]?.[1]??actualPriorStaff;
+      const currentCost28=sum(currentCosts,'running_costs')-actualCurrentStaff+currentStaffBasis;
+      const priorCost28=sum(priorCosts,'running_costs')-actualPriorStaff+priorStaffBasis;
+      const staffBasis=staffMonths[0]?new Date(`${staffMonths[0][0]}-01T12:00:00`).toLocaleDateString('en-GB',{month:'long',year:'numeric'}):'current 28 days';
       setData({
-        cost28:sum(currentCosts,'running_costs'),priorCost28:sum(priorCosts,'running_costs'),
+        cost28:currentCost28,priorCost28,
         purchases28:currentPurchases.reduce((n,r)=>n+(Number(r.normalized_cost)||0),0),priorPurchases28:priorPurchases.reduce((n,r)=>n+(Number(r.normalized_cost)||0),0),purchasesLoaded:purchases.length>0,
         gp28:currentProfit.reduce((n,r)=>n+(Number(r.gross_profit)||0),0),priorGp28:priorProfit.reduce((n,r)=>n+(Number(r.gross_profit)||0),0),
         sales28:currentProfit.reduce((n,r)=>n+(Number(r.sales_net)||0),0),priorSales28:priorProfit.reduce((n,r)=>n+(Number(r.sales_net)||0),0),
-        staff28:sum(currentCosts,'staff_costs'),premises28:sum(currentCosts,'premises_costs'),vehicle28:sum(currentCosts,'vehicle_costs'),admin28:sum(currentCosts,'admin_costs'),finance28:sum(currentCosts,'finance_costs'),rent28:sum(currentCosts,'rent_accrual'),electric28:sum(currentCosts,'electricity_accrual'),loading:false
+        staff28:currentStaffBasis,staffBasis,premises28:sum(currentCosts,'premises_costs'),vehicle28:sum(currentCosts,'vehicle_costs'),admin28:sum(currentCosts,'admin_costs'),finance28:sum(currentCosts,'finance_costs'),rent28:sum(currentCosts,'rent_accrual'),electric28:sum(currentCosts,'electricity_accrual'),loading:false
       });
     };
     load();const timer=window.setInterval(load,15*60*1000);return()=>{cancelled=true;window.clearInterval(timer)};
@@ -146,8 +168,8 @@ export default function HomeSageCosts(){
       <span>28-day running costs · Sage</span>
       <strong>{data.loading?'—':money(data.cost28)}</strong>
       <small className={costTrend!=null&&costTrend>0?'pulseBad':'pulseGood'}>{data.error?'Sage costs unavailable':costTrend==null?'Management cost basis':`${costTrend>=0?'+':''}${costTrend.toFixed(1)}% vs same 28 days last month`}</small>
-      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Staff {money(data.staff28)} · Premises (rent + electricity) {money(data.premises28)} · Vehicles {money(data.vehicle28)}</small>}
-      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Rent {money(data.rent28)} + electricity {money(data.electric28)} smoothed from trailing 12 months.</small>}
+      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:4}}>Staff {money(data.staff28)} ({data.staffBasis} monthly total) · Premises (rent + electricity) {money(data.premises28)} · Vehicles {money(data.vehicle28)}</small>}
+      {!data.loading&&!data.error&&<small style={{display:'block',marginTop:2,opacity:.72}}>Wages use the latest completed monthly total. Rent {money(data.rent28)} + electricity {money(data.electric28)} are smoothed.</small>}
     </>,costHost)}
     {stockHost&&createPortal(<>
       <span>28-day cost of goods sold · Sage</span>
