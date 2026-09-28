@@ -75,7 +75,7 @@ type EmailSummary = {
 
 const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Discipline','Proof','Vault','Me','Relationships','Health','Goals','CEO','Analytics','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
-const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','Recovery time'];
+const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','No Corn','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
 
 const blankDaily: DailyEntry = {
