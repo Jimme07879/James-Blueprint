@@ -1,6 +1,6 @@
 "use client";
 
-import {useEffect, useMemo, useState} from "react";
+import {useEffect, useMemo, useState, type CSSProperties, type FormEvent} from "react";
 import {supabase} from "../lib/supabase";
 
 type Area = "Relationship" | "Personal" | "Business" | "Other";
@@ -16,10 +16,10 @@ const localToday=()=>{
   return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10);
 };
 const blank=():Draft=>({area:"Relationship",title:"",next_action:"",review_date:localToday(),status:"open"});
-const rowStyle:React.CSSProperties={border:"1px solid var(--line, #dce2df)",borderRadius:12,padding:14,background:"var(--card, transparent)"};
-const inputStyle:React.CSSProperties={boxSizing:"border-box",width:"100%",border:"1px solid #c9d1ce",borderRadius:8,padding:"10px 11px",color:"#192b26",background:"#fff"};
-const smallButton:React.CSSProperties={border:"1px solid #b8c7c1",borderRadius:8,padding:"8px 12px",cursor:"pointer",background:"#fff",color:"#1b3930",fontWeight:700};
-const primaryButton:React.CSSProperties={...smallButton,background:"#234b3d",color:"white"};
+const rowStyle:CSSProperties={border:"1px solid var(--line, #dce2df)",borderRadius:12,padding:14,background:"var(--card, transparent)"};
+const inputStyle:CSSProperties={boxSizing:"border-box",width:"100%",border:"1px solid #c9d1ce",borderRadius:8,padding:"10px 11px",color:"#192b26",background:"#fff"};
+const smallButton:CSSProperties={border:"1px solid #b8c7c1",borderRadius:8,padding:"8px 12px",cursor:"pointer",background:"#fff",color:"#1b3930",fontWeight:700};
+const primaryButton:CSSProperties={...smallButton,background:"#234b3d",color:"white"};
 const formatDate=(s:string)=>new Date(s+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
 
 export default function CommitmentsCentre({userId,compact=false,onOpen}:{userId:string;compact?:boolean;onOpen?:()=>void}){
@@ -48,7 +48,7 @@ export default function CommitmentsCentre({userId,compact=false,onOpen}:{userId:
   const finished=rows.filter(r=>r.status==="done");
 
   const valid=(d:Draft)=>Boolean(d.title.trim()&&d.next_action.trim()&&d.review_date);
-  const add=async(e:React.FormEvent)=>{
+  const add=async(e:FormEvent)=>{
     e.preventDefault();
     if(!valid(draft))return;
     setSaving(true);setMessage("");
@@ -64,7 +64,7 @@ export default function CommitmentsCentre({userId,compact=false,onOpen}:{userId:
     setEdit({id:r.id,logStep,draft:{area:r.area,title:r.title,next_action:r.next_action,review_date:r.review_date,status:r.status}});
     setMessage("");
   };
-  const saveEdit=async(e:React.FormEvent)=>{
+  const saveEdit=async(e:FormEvent)=>{
     e.preventDefault();
     if(!edit||!valid(edit.draft))return;
     const row=rows.find(r=>r.id===edit.id);if(!row)return;
