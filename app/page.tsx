@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import { connectMicrosoft, disconnectMicrosoft, getMicrosoftAccount, getInboxMessages, type OutlookMessage } from '../lib/microsoft';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, RadarChart, PolarGrid, PolarAngleAxis, Radar } from 'recharts';
 import DisciplineCentre, { DisciplineReminder } from './DisciplineCentre';
+import CommitmentsCentre from './CommitmentsCentre';
 
 type DailyEntry = {
   id?: string; entry_date: string; sleep_hours?: number|null; sleep_quality?: number|null;
@@ -73,7 +74,7 @@ type EmailSummary = {
   error?: string;
 };
 
-const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Discipline','Proof','Vault','Me','Relationships','Health','Goals','CEO','Analytics','Settings'];
+const tabs = ['Home','Today','Daily','Stevie','Email','Sales','Finance','Customers','Sage Live','Discipline','Commitments','Proof','Vault','Me','Relationships','Health','Goals','CEO','Analytics','Settings'];
 const pillars = ['Me','Relationships','Business','Money','Life','Growth'];
 const habits = ['Exercise','Water','Healthy meals','Walk','No smoking','No Corn','Recovery time'];
 const today = new Date().toISOString().slice(0,10);
@@ -241,7 +242,7 @@ function BlueprintApp({session}:{session:Session}) {
         <button className="btn themeToggle" onClick={toggleTheme} aria-label="Toggle colour theme">{theme==='dark'?'☀ Light':'☾ Dark'}</button>
       </div>
       {tab==='Home'&&<Dashboard session={session} entries={entries} goals={goals} leads={leads} proofItems={proofItems} vaultItems={vaultItems} decisionItems={decisionItems} emailSummary={emailSummary} financialRows={financialRows} sageCustomers={sageCustomers} sageBridgeStatus={sageBridgeStatus} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
-      {tab==='Today'&&<TodayOps session={session} entries={entries} goals={goals} leads={leads} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/>}
+      {tab==='Today'&&<><CommitmentsCentre userId={session.user.id} compact onOpen={()=>setTab('Commitments')}/><TodayOps session={session} entries={entries} goals={goals} leads={leads} decisionItems={decisionItems} emailSummary={emailSummary} reload={loadAll} refreshEmail={refreshEmail} setTab={setTab}/></>}
       {tab==='Daily'&&<DailyForm value={daily} setValue={setDaily} save={saveDaily}/>}
       {tab==='Email'&&<EmailCentre session={session} summary={emailSummary} refresh={refreshEmail} goals={goals} reload={loadAll}/>} 
       {tab==='Sales'&&<SalesCommandCentre session={session} leads={leads} emailSummary={emailSummary} reload={loadAll} setTab={setTab}/>}
@@ -250,6 +251,7 @@ function BlueprintApp({session}:{session:Session}) {
       {tab==='Sage Live'&&<SageLive session={session} customers={sageCustomers} status={sageBridgeStatus} reload={loadAll}/>} 
       {tab==='Stevie'&&<StevieCentre entries={entries} goals={goals} leads={leads} business={business} emailSummary={emailSummary} setTab={setTab}/>}
       {tab==='Discipline'&&<DisciplineCentre userId={session.user.id}/>}
+      {tab==='Commitments'&&<CommitmentsCentre userId={session.user.id}/>}
       {tab==='Proof'&&<ProofTimeline session={session} items={proofItems} reload={loadAll}/>}
       {tab==='Vault'&&<BlueprintVault session={session} items={vaultItems} reload={loadAll}/>}
 
